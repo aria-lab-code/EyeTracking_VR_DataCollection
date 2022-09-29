@@ -8,7 +8,6 @@ public class SmoothPursuitLinear : MonoBehaviour
     private float x;
     private float y;
     private float max;
-    private Vector3 initPos;
     private bool atNextPos;
     private Vector3 nextPos;
 
@@ -19,10 +18,8 @@ public class SmoothPursuitLinear : MonoBehaviour
     {
         speed = 5;
         max = 10 * Mathf.Sqrt(3);
-        x = Random.Range(-max, max);
-        y = Random.Range(-max, max);
-
-        initPos = new Vector3(x,y,10);
+        
+        transform.position = new Vector3(0, 5, 10);
 
         x = Random.Range(-max, max);
         y = Random.Range(-max, max);

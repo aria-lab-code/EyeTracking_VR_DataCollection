@@ -388,6 +388,7 @@
 "Assets/Samples/Tobii XR SDK/3.0.1/Getting Started/Scripts/HighlightAtGaze.cs"
 "Assets/Scripts/GazeDataCollection.cs"
 "Assets/Scripts/HighlightAtGaze.cs"
+"Assets/Scripts/SmoothPursuitArc.cs"
 "Assets/Scripts/SmoothPursuitLinear.cs"
 "Assets/TextMesh Pro/Examples & Extras/Scripts/Benchmark01.cs"
 "Assets/TextMesh Pro/Examples & Extras/Scripts/Benchmark01_UGUI.cs"

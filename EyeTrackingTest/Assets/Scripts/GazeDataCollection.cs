@@ -21,13 +21,14 @@ public class GazeDataCollection : MonoBehaviour
     public int UserIDNum = 0;       // TODO: Change this value for each participant
     public string Path;             // TODO: Change this to the path to the SSD directory
     private static string UserID;
+    private static string testNum;
     private static string File_Path;
     #endregion
 
     #region "GUI interactions"
     public TextMesh breakMessage, countdownMessage;
     public Canvas BreakCanvas, CountdownCanvas;
-    private static GameObject GazeObject1, GazeObject2, GazeObject3;
+    private static GameObject GazeObject1, GazeObject2, GazeObject3, TrackObjectLine, TrackObjectArc;
     private bool continueClicked;
     #endregion
 
@@ -35,7 +36,7 @@ public class GazeDataCollection : MonoBehaviour
 
     private const int SHORT_BREAK = 5;
     private float gameTime;
-    private static bool testing;
+    private static bool rapidTesting;
     
 
     #region "EyeDataParameters"
@@ -88,7 +89,7 @@ public class GazeDataCollection : MonoBehaviour
         //Sync_File_Path = Path + "\\gazedata_sync_" + UserID + ".npy";
         timer.Start();
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
-        testing = false;
+        rapidTesting = false;
         frame = 0;
 
         continueClicked = false;
@@ -103,18 +104,13 @@ public class GazeDataCollection : MonoBehaviour
         GazeObject1 = GameObject.Find("Gaze Focusable Object 1");
         GazeObject2 = GameObject.Find("Gaze Focusable Object 2");
         GazeObject3 = GameObject.Find("Gaze Focusable Object 3");
+        TrackObjectLine = GameObject.Find("Tracking Object 1");
+        TrackObjectArc = GameObject.Find("Tracking Object 2");
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
-
-        visual = new GameObject("Gaze ray visual");
-        visual.AddComponent<LineRenderer>();
-        {
-            LineRenderer lr = visual.GetComponent<LineRenderer>();
-            InitLineRenderer(lr);
-            lr.startColor = Color.red;
-            lr.endColor = Color.red;
-        }
+        TrackObjectLine.SetActive(false);
+        TrackObjectArc.SetActive(false);
         
     }
 
@@ -144,7 +140,7 @@ public class GazeDataCollection : MonoBehaviour
         "forward.z" + "," +
         Environment.NewLine;
 
-        File.AppendAllText("StandardSaccade_" + UserID + ".txt", variable);
+        File.AppendAllText(UserID + "_" + testNum + ".txt", variable);
     }
 
     /// <summary>
@@ -186,10 +182,18 @@ public class GazeDataCollection : MonoBehaviour
         {
             SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
             eye_callback_registered = true;
-            UnityEngine.Debug.Log("Callback Registered");
         }
 
         else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
+        {
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
+            eye_callback_registered = false;
+        }
+    }
+
+    void Release()
+    {
+        if (eye_callback_registered)
         {
             SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
             eye_callback_registered = false;
@@ -277,7 +281,7 @@ public class GazeDataCollection : MonoBehaviour
         frame++;
         localToWorldTransform = Camera.main.transform.localToWorldMatrix;
         forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1));
-        if (testing)
+        if (rapidTesting)
         {
             RawGazeRays localGazeRays;
             GetGazeRays(out localGazeRays);
@@ -354,6 +358,7 @@ public class GazeDataCollection : MonoBehaviour
             gaze_origin_R = eyeData.verbose_data.right.gaze_origin_mm * mm_to_m;
             gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
             gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
+            //gaze_direct_Combined = eyeData.verbose_data.combine.gaze_direction_normalized;
             gaze_sensitive = eye_parameter.gaze_ray_parameter.sensitive_factor;
             //UnityEngine.Debug.Log("Data Measured");
 
@@ -388,7 +393,7 @@ public class GazeDataCollection : MonoBehaviour
                 forward.z.ToString() + "," +
                 Environment.NewLine;
             
-            File.AppendAllText("StandardSaccade_" + UserID + ".txt", value);
+            File.AppendAllText(UserID + "_" + testNum + ".txt", value);
 
             cnt_callback++;
         }
@@ -425,7 +430,19 @@ public class GazeDataCollection : MonoBehaviour
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
         
-        breakMessage.text = "Rapid Movement Test Complete! When you are ready to begin the Smooth Pursuit section of the test, press continue.";
+        breakMessage.text = "Rapid Movement Test Complete! When you are ready to begin the Linear Pursuit section of the test, press continue.";
+        yield return StartCoroutine(DisplayBreakMenu());
+
+        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+        yield return StartCoroutine(LinearPursuit());
+
+        breakMessage.text = "Linear Pursuit Test Complete! When you are ready to begin the Arc Pursuit section of the test, press continue.";
+        yield return StartCoroutine(DisplayBreakMenu());
+
+        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+        yield return StartCoroutine(ArcPursuit());
+
+        breakMessage.text = "All Tests Complete! Thank you!";
         yield return StartCoroutine(DisplayBreakMenu());
     }
 
@@ -469,12 +486,12 @@ public class GazeDataCollection : MonoBehaviour
 
     private IEnumerator RapidMovementTest()
     {
-        
+        testNum = "0";
         GazeObject1.SetActive(true);
         GazeObject2.SetActive(true);
         GazeObject3.SetActive(true);
         cnt_callback = 0;
-        testing = true;
+        rapidTesting = true;
         Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < 60)
@@ -482,10 +499,43 @@ public class GazeDataCollection : MonoBehaviour
             //StartCoroutine(UpdateGazeObjects());
             yield return null;
         }
-        testing = false;
+        rapidTesting = false;
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
+        Release();
 
     }
+
+    private IEnumerator LinearPursuit()
+    {
+        testNum = "1";
+        TrackObjectLine.SetActive(true);
+        cnt_callback = 0;
+        Invoke("Measurement", 0f);
+        gameTime = Time.time;
+        while (Time.time - gameTime < 60)
+        {
+            yield return null;
+        }
+        TrackObjectLine.SetActive(false);
+        Release();
+    }
+
+    private IEnumerator ArcPursuit()
+    {
+        testNum = "2";
+        TrackObjectArc.SetActive(true);
+        cnt_callback = 0;
+        Invoke("Measurement", 0f);
+        gameTime = Time.time;
+        while (Time.time - gameTime < 60)
+        {
+            yield return null;
+        }
+        TrackObjectArc.SetActive(false);
+        Release();
+    }
+
 }
+
