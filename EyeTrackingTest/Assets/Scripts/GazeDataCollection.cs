@@ -55,6 +55,8 @@ public class GazeDataCollection : MonoBehaviour
 
     private GameObject visual;
 
+
+
     void InitLineRenderer(LineRenderer lr)
     {
         lr.startWidth = 0.005f;

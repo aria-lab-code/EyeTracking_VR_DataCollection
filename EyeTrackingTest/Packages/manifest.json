@@ -1,6 +1,7 @@
 {
   "dependencies": {
-    "com.tobii.xr.sdk": "file:C:/Users/Jordan Thompson/Documents/TobiiSDK",
+    "com.tobii.xr.sdk": "file:C:/Users/Brown Research/Documents/TobiiXRSDK_3.0.1.179",
+    "com.unity.barracuda": "3.0.0",
     "com.unity.collab-proxy": "1.17.1",
     "com.unity.feature.development": "1.0.1",
     "com.unity.ide.rider": "3.0.15",
