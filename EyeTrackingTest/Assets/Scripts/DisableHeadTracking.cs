@@ -13,6 +13,11 @@ public class DisableHeadTracking : MonoBehaviour
     // Update is called once per frame
     void LateUpdate()
     {
-        Camera.main.transform.parent.rotation = Quaternion.Inverse(Camera.main.transform.localRotation);
+        Transform camera = Camera.main.transform;
+        Transform camParent = camera.parent;
+        Transform player = camParent.parent;
+        
+
+        camParent.localRotation = Quaternion.Inverse(camera.localRotation);
     }
 }

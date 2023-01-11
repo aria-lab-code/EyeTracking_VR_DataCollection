@@ -2175,3 +2175,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   modelAsset: {fileID: 5022602860645237092, guid: c34ef16c3329c75488932a63bf707b4c, type: 3}
+  useModel: 1
