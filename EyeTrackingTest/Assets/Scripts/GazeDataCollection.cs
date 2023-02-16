@@ -113,7 +113,7 @@ public class GazeDataCollection : MonoBehaviour
         GazeObject3.SetActive(false);
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
-        
+
     }
 
     void Data_txt()
@@ -293,6 +293,7 @@ public class GazeDataCollection : MonoBehaviour
             RaycastHit hit;
             if (Physics.Raycast(gaze, out hit))
             {
+                
                 if (hit.transform.gameObject.CompareTag("GazeObject1"))
                 {
                     GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
@@ -313,18 +314,20 @@ public class GazeDataCollection : MonoBehaviour
                 }
                 else
                 {
+
                     GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
                     GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
                     GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
                 }   
             }
         }
-        
+
         if (firstFrame)
         {
             StartCoroutine(Sequence());
             firstFrame = false;
         }
+
     }
     
     

@@ -25,6 +25,7 @@ public class HighlightAtGaze : MonoBehaviour
     //The method of the "IGazeFocusable" interface, which will be called when this object receives or loses focus
     public void GazeFocusChanged(bool hasFocus)
     {
+        
         //If this object received focus, fade the object's color to highlight color
         if (hasFocus)
         {

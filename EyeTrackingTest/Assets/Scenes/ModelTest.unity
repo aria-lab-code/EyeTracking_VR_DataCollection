@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: f15c336556dd74f40aaca655f7767970, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.18028378, g: 0.22571412, b: 0.30692285, a: 1}
+  m_IndirectSpecularColor: {r: 0.9573351, g: 0.69973606, b: 0.47198272, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -894,7 +894,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 662148048}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 2033266400}
+        m_TargetAssemblyTypeName: ModelSim, Assembly-CSharp
+        m_MethodName: ContinueClicked
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 1
 --- !u!114 &662148048
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1808,7 +1820,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: be8ae8d3a4961ee448341a6d5c1f92eb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  highlightColor: {r: 1, g: 0, b: 0, a: 1}
+  highlightColor: {r: 1, g: 0.02998823, b: 0, a: 1}
   animationTime: 0.1
   speed: 2
 --- !u!23 &1517572051
@@ -2147,6 +2159,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 00dce22431a4f5d43aa9c3696e47cd7e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  simulation: {fileID: 2033266397}
 --- !u!4 &2033266399
 Transform:
   m_ObjectHideFlags: 0
@@ -2175,4 +2188,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   modelAsset: {fileID: 5022602860645237092, guid: c34ef16c3329c75488932a63bf707b4c, type: 3}
-  useModel: 1
+  useModel: 0
+  breakMessage: {fileID: 1083708609}
+  countdownMessage: {fileID: 576849366}
+  BreakCanvas: {fileID: 667567739}
+  CountdownCanvas: {fileID: 1226335111}
+  testing: 0

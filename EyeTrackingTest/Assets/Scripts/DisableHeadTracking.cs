@@ -4,10 +4,13 @@ using UnityEngine;
 
 public class DisableHeadTracking : MonoBehaviour
 {
-    // Start is called before the first frame update
+
+    public GameObject simulation;
+    private ModelSim modelSim;
+
     void Start()
     {
-        
+        modelSim = simulation.GetComponent<ModelSim>();
     }
 
     // Update is called once per frame
@@ -16,8 +19,12 @@ public class DisableHeadTracking : MonoBehaviour
         Transform camera = Camera.main.transform;
         Transform camParent = camera.parent;
         Transform player = camParent.parent;
-        
 
-        camParent.localRotation = Quaternion.Inverse(camera.localRotation);
+        bool testing = modelSim.testing;
+        if (testing)
+        {
+            camParent.localRotation = Quaternion.Inverse(camera.localRotation);
+        }
+        
     }
 }
