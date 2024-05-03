@@ -15,9 +15,16 @@ using Unity.Barracuda;
 
 public class ModelSim : MonoBehaviour
 {
+    private static int frame;
     public NNModel modelAsset;
-    public bool useModel;
+    public static bool useModel;
+    public bool use_model;
+    private static IWorker worker;
+    private static bool first_output;
+    public bool use_quadrant;
+    public static bool useQuadrant;
 
+    public static int playerID;
     private static Model m_RuntimeModel;
     private static Transform player;
 
@@ -34,27 +41,37 @@ public class ModelSim : MonoBehaviour
     #endregion
 
     public EyeParameter eye_parameter = new EyeParameter();
+    public GazeRayParameter gaze = new GazeRayParameter();
     private static EyeData_v2 eyeData = new EyeData_v2();
+    private static bool eye_callback_registered = false;
 
     private bool firstFrame;
     private bool rapidTesting;
 
-    public bool testing;
+    public static bool testing;
 
     private const int SHORT_BREAK = 5;
     private float gameTime;
+
+    public bool calibrate;
 
     // Start is called before the first frame update
     void Start()
     {
         Invoke("SystemCheck", 0.5f);                // System check.
-        SRanipal_Eye_v2.LaunchEyeCalibration();
+        if (calibrate)
+        {
+            SRanipal_Eye_v2.LaunchEyeCalibration();
+        }
+        SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
 
         player = Camera.main.transform.parent.parent;
         m_RuntimeModel = ModelLoader.Load(modelAsset);
+        worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, m_RuntimeModel);
         hn = new Tensor(1, 1, 9, 1);
         cn = new Tensor(1, 1, 9, 1);
         input = new Tensor(1, 1, 9, 1);
+        first_output = true;
         rapidTesting = false;
         testing = false;
 
@@ -70,8 +87,33 @@ public class ModelSim : MonoBehaviour
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
         continueClicked = false;
+        useModel = use_model;
+        useQuadrant = use_quadrant;
+    }
 
-        
+    void Measurement()
+    {
+        EyeParameter eye_parameter = new EyeParameter();
+        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+
+        if (SRanipal_Eye_Framework.Status != SRanipal_Eye_Framework.FrameworkStatus.WORKING)
+        {
+            UnityEngine.Debug.Log("Not working");
+            return;
+        }
+
+        UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
+        if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == true && eye_callback_registered == false)
+        {
+            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
+            eye_callback_registered = true;
+        }
+
+        else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
+        {
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
+            eye_callback_registered = false;
+        }
     }
 
     /// <summary>
@@ -135,18 +177,19 @@ public class ModelSim : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        GetData();
+        forward = player.forward;
 
-        if (testing)
+        if (useModel)
         {
-            if (useModel)
-            {
-                ModelCall();
-            }
-            else
-            {
-                QuadrantBaseline();
-            }
+            ModelCall();
+        }
+        else if (useQuadrant)
+        {
+            QuadrantBaseline();
+        }
+        else
+        {
+            VectorBaseline();
         }
         
 
@@ -198,7 +241,6 @@ public class ModelSim : MonoBehaviour
 
     private static void ModelCall()
     {
-
         for (int i=0; i<3; i++)
         {
             input[0, 0, i, 0] = gaze_direct_L[i];
@@ -212,18 +254,19 @@ public class ModelSim : MonoBehaviour
             {"c0", cn}
         };
 
-        var worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, m_RuntimeModel);
         worker.Execute(Inputs);
         var output = worker.PeekOutput("output");
         hn = worker.PeekOutput("hn");
         cn = worker.PeekOutput("cn");
+        var new_forward = new Vector3(output[0,0,0,0]-0.05f, output[0,0,0,1], output[0,0,0,2]).normalized;
 
-        var new_forward = new Vector3(output[0,0,0,0], output[0,0,0,1], output[0,0,0,2]);
-        
         Quaternion rotation = Quaternion.LookRotation(new_forward);
-        player.rotation = rotation;
+        if (testing)
+        {
+            player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime*5.0f);
+        }
 
-        worker.Dispose();
+        
     }
 
     /// <summary>
@@ -314,10 +357,13 @@ public class ModelSim : MonoBehaviour
     /// Callback function to record the eye movement data.
     /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
     /// </summary>
-    private static void GetData()
+    private static void GetData(ref EyeData_v2 eye_data)
     {
         
-        eyeData = new EyeData_v2();
+        EyeParameter eye_parameter = new EyeParameter();
+        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+        eyeData = eye_data;
+
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref eyeData);
         if (error == ViveSR.Error.WORK)
         {
@@ -326,10 +372,14 @@ public class ModelSim : MonoBehaviour
 
             gaze_direct_L.x = gaze_direct_L.x * -1;
             gaze_direct_R.x = gaze_direct_R.x * -1;
+
         }
         
-        forward = player.forward;
+        
+        
+    
     }
+
 
     /// <summary>
     /// Saccade task sequence.
@@ -422,6 +472,8 @@ public class ModelSim : MonoBehaviour
         GazeObject3.SetActive(true);
         rapidTesting = true;
         testing = true;
+        ResetModel();
+        Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < 60)
         {
@@ -434,12 +486,15 @@ public class ModelSim : MonoBehaviour
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
         ResetHead();
+        Release();
     }
 
     private IEnumerator LinearPursuit()
     {
         TrackObjectLine.SetActive(true);
         testing = true;
+        ResetModel();
+        Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < 60)
         {
@@ -448,12 +503,15 @@ public class ModelSim : MonoBehaviour
         testing = false;
         TrackObjectLine.SetActive(false);
         ResetHead();
+        Release();
     }
 
     private IEnumerator ArcPursuit()
     {
         TrackObjectArc.SetActive(true);
         testing = true;
+        ResetModel();
+        Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < 60)
         {
@@ -462,5 +520,30 @@ public class ModelSim : MonoBehaviour
         testing = false;
         TrackObjectArc.SetActive(false);
         ResetHead();
+        Release();
+    }
+
+    private void ResetModel()
+    {
+        worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, m_RuntimeModel);
+        hn = new Tensor(1, 1, 9, 1);
+        cn = new Tensor(1, 1, 9, 1);
+        input = new Tensor(1, 1, 9, 1);
+        for (int i = 0; i < 9; i++)
+        {
+            hn[0, 0, i, 0] = 0;
+            cn[0, 0, i, 0] = 0;
+        }
+        first_output = true;
+        frame = 0;
+    }
+
+    void Release()
+    {
+        if (eye_callback_registered)
+        {
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
+            eye_callback_registered = false;
+        }
     }
 }

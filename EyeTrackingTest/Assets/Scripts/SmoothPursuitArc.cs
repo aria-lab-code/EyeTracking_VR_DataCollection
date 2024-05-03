@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,6 +22,17 @@ public class SmoothPursuitArc : MonoBehaviour
 
     private float speed;
 
+    private Renderer _renderer;
+    private Color _originalColor;
+    private Color _targetColor;
+
+    public Color highlightColor = Color.green;
+    private bool init = true;
+
+    private bool focused;
+
+
+
     // Start is called before the first frame update
     void OnEnable()
     {
@@ -41,11 +53,11 @@ public class SmoothPursuitArc : MonoBehaviour
         int rand = ran.Next(0, 2);
         if (rand == 0)
         {
-            dir = 1;
+            dir = 1; //counterclockwise
         }
         else
         {
-            dir = -1;
+            dir = -1; //clockwise
         }
     }
 
@@ -55,8 +67,8 @@ public class SmoothPursuitArc : MonoBehaviour
         float maxValX = Mathf.Min(max, transform.position.x + 7);
         float minValY = Mathf.Max(-max, transform.position.y - 7);
         float maxValY = Mathf.Min(max, transform.position.y + 7);
-        x = Random.Range(minValX, maxValX);
-        y = Random.Range(minValY, maxValY);
+        x = UnityEngine.Random.Range(minValX, maxValX);
+        y = UnityEngine.Random.Range(minValY, maxValY);
 
         center = new Vector3(x, y, 10);
         r = Vector3.Distance(transform.position, center);
@@ -66,7 +78,7 @@ public class SmoothPursuitArc : MonoBehaviour
     {
         float minVal = Mathf.Max(-max, center.x - r);
         float maxVal = Mathf.Min(max, center.x + r);
-        x = Random.Range(minVal, maxVal);
+        x = UnityEngine.Random.Range(minVal, maxVal);
         int rand = ran.Next(0, 2);
         var val = 1;
         if (rand == 0)
@@ -83,7 +95,8 @@ public class SmoothPursuitArc : MonoBehaviour
     {
         angle = Mathf.Atan2(transform.position.y - center.y, transform.position.x - center.x);
     }
-
+    
+    
     // Update is called once per frame
     void Update()
     {
@@ -103,6 +116,41 @@ public class SmoothPursuitArc : MonoBehaviour
         if (Vector3.Distance(transform.position, nextPos) < .1f)
         {
             atNextPos = true;
+        }
+        ColorUpdate();
+    }
+    
+    void ColorUpdate()
+    {
+        _renderer = GetComponent<Renderer>();
+        if (init)
+        {
+            _originalColor = _renderer.material.color;
+        }
+        _renderer.material.color = _targetColor;
+        init = false;
+    }
+
+    public void GazeFocusChanged(bool hasFocus)
+    {
+
+        //If this object received focus, fade the object's color to highlight color
+        if (hasFocus)
+        {
+            _targetColor = highlightColor;
+        }
+        //If this object lost focus, fade the object's color to it's original color
+        else
+        {
+            _targetColor = _originalColor;
+        }
+        checkFocus(hasFocus);
+    }
+    private void checkFocus(bool newFocus)
+    {
+        if (newFocus != focused)
+        {
+            focused = newFocus;
         }
     }
 }

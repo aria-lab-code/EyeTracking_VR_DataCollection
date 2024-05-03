@@ -1,14 +1,16 @@
 ﻿// Copyright © 2018 – Property of Tobii AB (publ) - All Rights Reserved
 
+using System;
 using UnityEngine;
 
     //Monobehaviour which implements the "IGazeFocusable" interface, meaning it will be called on when the object receives focus
 public class HighlightAtGaze : MonoBehaviour
 {
     private static readonly int _baseColor = Shader.PropertyToID("_BaseColor");
-    public Color highlightColor = Color.red;
+    public Color highlightColor = Color.green;
     public float animationTime = 0.1f;
 
+    public GameObject[] _otherObject;
     private Renderer _renderer;
     private Color _originalColor;
     private Color _targetColor;
@@ -53,10 +55,18 @@ public class HighlightAtGaze : MonoBehaviour
 
     void OnEnable()
     {
+
+
         startTime = Time.time;
         focusTime = Time.time;
-        focused=false;
+        if (focused)
+        {
+            GazeCollection2.score++;
+        }
+        focused =false;
         _renderer = GetComponent<Renderer>();
+        GazeCollection2.total_score++;
+
         if (init) {
             _originalColor = _renderer.material.color;
         }
@@ -65,10 +75,21 @@ public class HighlightAtGaze : MonoBehaviour
         System.Random random = new System.Random();
 
         float xMax = 20 * Mathf.Sqrt(3);
-        x = Random.Range(-xMax, xMax);
-
-        y = Random.Range(-xMax, xMax);
-
+        bool generated = false;
+        while (!generated)
+        {
+            x = UnityEngine.Random.Range(-xMax, xMax);
+            y = UnityEngine.Random.Range(-xMax, xMax);
+            generated = true;
+            foreach (GameObject cube in _otherObject)
+            {
+                if (Mathf.Pow(cube.transform.position.x - x, 2f) + Mathf.Pow(cube.transform.position.y - y, 2) < 2)
+                {
+                    generated = false;
+                    break;
+                }
+            }
+        }
         initPos = new Vector3(x, y, 20);
         transform.position = initPos;
 
@@ -92,6 +113,7 @@ public class HighlightAtGaze : MonoBehaviour
         }
         if (Time.time - focusTime > 0.3 && focused || Time.time - startTime > 7) {
             OnEnable();
+
         }
     }
 }

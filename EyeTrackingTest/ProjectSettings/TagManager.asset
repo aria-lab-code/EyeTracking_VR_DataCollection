@@ -7,6 +7,13 @@ TagManager:
   - GazeObject1
   - GazeObject2
   - GazeObject3
+  - GazeObject4
+  - GazeObject5
+  - AvoidObject
+  - AvoidObject1
+  - AvoidObject2
+  - AvoidObject3
+  - GazeObject6
   layers:
   - Default
   - TransparentFX
@@ -14,7 +21,7 @@ TagManager:
   - 
   - Water
   - UI
-  - 
+  - ButtonCollision
   - 
   - 
   - 

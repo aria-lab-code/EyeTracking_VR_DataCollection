@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 2100000, guid: f15c336556dd74f40aaca655f7767970, type: 2}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 20d4f77b9022eab48b4d94599ed4bf82, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.9573351, g: 0.69973606, b: 0.47198272, a: 1}
+  m_IndirectSpecularColor: {r: 1.2070006, g: 1.3379338, b: 1.4631181, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -229,6 +229,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   highlightColor: {r: 1, g: 0, b: 0, a: 1}
   animationTime: 0.1
+  _otherObject: []
   speed: 2
 --- !u!23 &220554468
 MeshRenderer:
@@ -250,7 +251,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 29ae8f00254f0d04d9b91fd6e2faaa6d, type: 2}
+  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1339,6 +1340,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8ff66d6ba5132c042bd1d7733beeac1f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  highlightColor: {r: 0, g: 1, b: 0, a: 1}
 --- !u!23 &1210311868
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1359,7 +1361,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 29ae8f00254f0d04d9b91fd6e2faaa6d, type: 2}
+  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1710,6 +1712,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a55742514556f6b4d8553c40a702e687, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  highlightColor: {r: 0, g: 1, b: 0, a: 1}
 --- !u!23 &1515476047
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1730,7 +1733,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 29ae8f00254f0d04d9b91fd6e2faaa6d, type: 2}
+  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1822,6 +1825,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   highlightColor: {r: 1, g: 0.02998823, b: 0, a: 1}
   animationTime: 0.1
+  _otherObject: []
   speed: 2
 --- !u!23 &1517572051
 MeshRenderer:
@@ -1843,7 +1847,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 29ae8f00254f0d04d9b91fd6e2faaa6d, type: 2}
+  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2065,6 +2069,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   highlightColor: {r: 1, g: 0, b: 0, a: 1}
   animationTime: 0.1
+  _otherObject: []
   speed: 2
 --- !u!23 &1974183983
 MeshRenderer:
@@ -2086,7 +2091,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 29ae8f00254f0d04d9b91fd6e2faaa6d, type: 2}
+  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2159,7 +2164,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 00dce22431a4f5d43aa9c3696e47cd7e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  simulation: {fileID: 2033266397}
 --- !u!4 &2033266399
 Transform:
   m_ObjectHideFlags: 0
@@ -2188,9 +2192,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   modelAsset: {fileID: 5022602860645237092, guid: c34ef16c3329c75488932a63bf707b4c, type: 3}
-  useModel: 0
+  use_model: 0
+  use_quadrant: 1
   breakMessage: {fileID: 1083708609}
   countdownMessage: {fileID: 576849366}
   BreakCanvas: {fileID: 667567739}
   CountdownCanvas: {fileID: 1226335111}
-  testing: 0
+  calibrate: 1
