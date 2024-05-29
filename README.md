@@ -1,5 +1,5 @@
 # A dataset of paired head and eye movements during visual tasks in virtual environments
-Contributors: _Colin Robow, Chia-Hsuan Tsai, Eric Brewer, Connor Mattson, Daniel S. Brown, Haohan Zhang_
+Repository Contributors: _Colin Robow, Chia-Hsuan Tsai, Jordan Thompson, Eric Brewer, Connor Mattson, Daniel S. Brown, Haohan Zhang_
 
 ### About the project
 Humans use coordinated head and eye movement to effectively survey, gain information, and interact with their environment. Our work introduced a open-access dataset consisting of N=20 users Neck and Eye oritentation during 4 simulated tasks. This repository contains the required Unity/CSharp scripts required to reproduce the human trials of our paper (link available soon).
@@ -39,12 +39,21 @@ If you are unable to reproduce these steps, please submit an GitHub issue in thi
 ### Building Your Own Tasks/Experiments
 We encourage the use of our project as a basis for continued work collecting neck and eye data. While we cannot address all the possible extensions that you may want to implement, we highlight some of the specific code implementations here that will help to explain how the experiments work.
 
-TODO: Here
+| Script    | Description |
+| -------- | ------- |
+| [GazeCollection2.cs](EyeTrackingTest/Assets/Scripts/GazeCollection2.cs)  | The main script for data collection. Uses a state machine to determine which task is currently running and intializes the corresponding objects. Keeps track of time and score. Calibration and UI Text declared here. |
+| [SmoothPursuitLinear.cs](EyeTrackingTest/Assets/Scripts/SmoothPursuitLinear.cs) | The script attached to unity cubes that moves the cubes linearly in space (Linear Pursuit Task). Highlights Cubes green when the gaze vector intersects the cube.  |
+| [SmoothPursuitArc.cs](EyeTrackingTest/Assets/Scripts/SmoothPursuitArc.cs) | The script attached to unity cubes that moves the cubes along a circular trajctory in space (Arc Pursuit Task). Highlights Cubes green when the gaze vector intersects the cube.  |
+| [HighlightAtGaze.cs](EyeTrackingTest/Assets/Scripts/HighlightAtGaze.cs) | The script attached to unity cubes that initializes and moves the cubes toward the camera (Rapid Movement and Rapid Avoidance Movement Tasks). Highlights Cubes green when the gaze vector intersects the cube and destroys the cubes when you look at them for enough time.  |
+| [AvoidObstacleTest.cs](EyeTrackingTest/Assets/Scripts/AvoidObstacleTest.cs) | The script attached to unity cubes that initializes and moves the cubes toward the camera (Rapid Avoidance Movement Task). Highlights Cubes red when the gaze vector intersects the cube.  |
 
 ### Ongoing Development
 The scene [ModelTest.unity](EyeTrackingTest/Assets/Scenes/ModelTest.unity) is to simulate a learned model using LSTM, GRU, and MLP implementations found in the [DataProcessing](DataProcessing) directory. This work is ongoing and much of the code may be overwritten or deprecated in the future.
 
-#### Unity Object Details
+### Contact Us
+If you run into problems with this repository, please submit an GitHub issue.
+
+#### Unity Object/Script Details
 
 The script and the relationship between the object is below.
 
@@ -60,7 +69,3 @@ The script and the relationship between the object is below.
 * Gaze Avoid Object 1 -> Avoid Obstacle Test
 * Gaze Avoid Object 2 -> Avoid Obstacle Test
 * Gaze Avoid Object 3 -> Avoid Obstacle Test
-
-The scenes start from `Simulation` object,There is `ModelSim` in `Simulation`.
-
-![image](https://github.com/aria-lab-code/EyeTracking_VR_DataCollection/assets/113972450/8de429de-db4f-4f2b-b4b7-95a9711f9f5b)
