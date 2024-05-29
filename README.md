@@ -1,22 +1,50 @@
-# EyeAndNeckTracking
+# A dataset of paired head and eye movements during visual tasks in virtual environments
+Contributors: _Colin Robow, Chia-Hsuan Tsai, Eric Brewer, Connor Mattson, Daniel S. Brown, Haohan Zhang_
+
 ### About the project
-There are 2 scenes in the project
+Humans use coordinated head and eye movement to effectively survey, gain information, and interact with their environment. Our work introduced a open-access dataset consisting of N=20 users Neck and Eye oritentation during 4 simulated tasks. This repository contains the required Unity/CSharp scripts required to reproduce the human trials of our paper (link available soon).
 
-* DataCollection
-* ModelTest
-  
-ModelTest is to simulate the learning model.And the DataCollection is to collect the human data
+The original dataset is available for use at [this link](https://figshare.com/articles/dataset/EyeTrackingVRDataset/25749378).
 
-#### About DataCollection
-The are 4 tasks in the scenes. Each task has 3 trials.
-* Smooth Linear Pursuit
-* Smooth Arc pursuit
-* Rapid Movement
-* Rapid Avoidance Movement
+### Requirements
+Software
+* Python >= 3.9.13
+* Unity 2021.3.8
+* SteamVR
 
-The scenes start from `Trial` object, which can be found in `hierarchy`. There is `DataCollection2`, the script, in `Trial`. All the procees of Data Collection is written in here. The data collection functions are also written in `DataCollection2`
+Hardware
+* VIVE Pro Eye, HTC Corporation
 
-![image](https://github.com/aria-lab-code/EyeTracking_VR_DataCollection/assets/113972450/8de429de-db4f-4f2b-b4b7-95a9711f9f5b)
+### Experiment Reproducability
+We engineered 4 tasks for users to participate in (shown below). Users conducted each task 3 times.
+* Smooth Linear Pursuit: Follow a target that moves linearly between random positions.
+* Smooth Arc Pursuit: Follow a target moving on circular trajectories. 
+* Rapid Movement: Eliminate targets moving toward the user before they collide with the camera.
+* Rapid Avoidance Movement: Eliminate blue targets moving toward the user while avoiding gazing at the yellow objects.
+
+The experiments are all conducted sequentially using the Unity Scene titled [DataCollection.unity](EyeTrackingTest/Assets/Scenes/DataCollection.unity). To set up the experiment, use the following steps:
+1. At the root of the project, create a file "userIDList.txt". This allows you to explicitly enumerate identifiers for users (one on each line). The script requires at least one line in this file, so please add YOUR_NAME to the file. NOTE: At the end of each user experiment, the top most element from this file gets deleted. You will need to make sure there is a user each time you run an experiment.
+2. Ensure that your hardware is recognized and connected to your computer and equip at least one hand controller.
+3. Sit upright with the headset on and look forward as you recenter the display using the on-board centering function. Remove the headset.
+4. Open [DataCollection.unity](EyeTrackingTest/Assets/Scenes/DataCollection.unity) in Unity.
+5. At the top of the window push the Play button.
+6. Place the Head Mounted Display on your head. You will see a calibration sequence to set up the eye tracker.
+7. Following calibration, you should be in a virtual environment with instructions appearing in front of you. NOTE: if you do NOT see instructions, make sure that you have completed step 1 correctly. The instructions will not appear if a user has not been explicitly defined in "userIDList.txt".
+8. Follow the instructions in the software and participate in training and all 12 trials.
+9. After the conclusion of the experiment, terminate the program by clicking the play button again.
+10. Examine your data at the project's root directory with the names "Object{USERID}-\*.txt" (The object locations for each trial) and "User{USERID}-\*.txt"
+
+If you are unable to reproduce these steps, please submit an GitHub issue in this repository.
+
+### Building Your Own Tasks/Experiments
+We encourage the use of our project as a basis for continued work collecting neck and eye data. While we cannot address all the possible extensions that you may want to implement, we highlight some of the specific code implementations here that will help to explain how the experiments work.
+
+TODO: Here
+
+### Ongoing Development
+The scene [ModelTest.unity](EyeTrackingTest/Assets/Scenes/ModelTest.unity) is to simulate a learned model using LSTM, GRU, and MLP implementations found in the [DataProcessing](DataProcessing) directory. This work is ongoing and much of the code may be overwritten or deprecated in the future.
+
+#### Unity Object Details
 
 The script and the relationship between the object is below.
 
@@ -33,21 +61,6 @@ The script and the relationship between the object is below.
 * Gaze Avoid Object 2 -> Avoid Obstacle Test
 * Gaze Avoid Object 3 -> Avoid Obstacle Test
 
-#### About ModelTest
-The are 3 tasks in the scenes. 
-* Smooth Linear Pursuit
-* Smooth Arc pursuit
-* Rapid Movement
-
 The scenes start from `Simulation` object,There is `ModelSim` in `Simulation`.
 
 ![image](https://github.com/aria-lab-code/EyeTracking_VR_DataCollection/assets/113972450/8de429de-db4f-4f2b-b4b7-95a9711f9f5b)
-
-The script and the relationship between the object is below.
-
-** object -> script **
-* Tracking Object1 -> Smooth Pursuit Linear
-* Tracking Object2 -> Smooth Pursuit Arc
-* Gaze Focusable Object 1 -> Highlight At Gaze
-* Gaze Focusable Object 2 -> Highlight At Gaze
-* Gaze Focusable Object 3 -> Highlight At Gaze
