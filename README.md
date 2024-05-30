@@ -2,7 +2,7 @@
 Repository Contributors: _Colin Robow, Chia-Hsuan Tsai, Jordan Thompson, Eric Brewer, Connor Mattson, Daniel S. Brown, Haohan Zhang_
 
 ### About the project
-Humans use coordinated head and eye movement to effectively survey, gain information, and interact with their environment. Our work introduced a open-access dataset consisting of N=20 users Neck and Eye oritentation during 4 simulated tasks. This repository contains the required Unity/CSharp scripts required to reproduce the human trials of our paper (link available soon).
+Humans use coordinated head and eye movement to effectively survey, gain information, and interact with their environment. Our work introduces a open-access dataset consisting of N=20 users Neck and Eye oritentation during 4 simulated tasks. This repository contains the required Unity/CSharp scripts required to reproduce the human trials of our paper (link available soon).
 
 The original dataset is available for use at [this link](https://figshare.com/articles/dataset/EyeTrackingVRDataset/25749378).
 
@@ -37,7 +37,7 @@ The experiments are all conducted sequentially using the Unity Scene titled [Dat
 If you are unable to reproduce these steps, please submit an GitHub issue in this repository.
 
 ### Building Your Own Tasks/Experiments
-We encourage the use of our project as a basis for continued work collecting neck and eye data. While we cannot address all the possible extensions that you may want to implement, we highlight some of the specific code implementations here that will help to explain how the experiments work.
+We encourage the use of our project as a basis for continued work collecting neck and eye data. While we cannot address all the possible extensions that you may want to implement, we highlight some of the specific code implementations here that will help to explain how the experiments work. These files can serve as examples to follow as you develop your own experiments.
 
 | Script    | Description |
 | -------- | ------- |
