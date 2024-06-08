@@ -6,6 +6,8 @@ Humans use coordinated head and eye movement to effectively survey, gain informa
 
 The original dataset is available for use at [this link](https://figshare.com/articles/dataset/EyeTrackingVRDataset/25749378).
 
+_Funding disclosure: This work is supported by the National Institute of Biomedical Imaging and Bioengineering (R21-EB035378)._
+
 ### Requirements
 Software
 * Python >= 3.9.13
