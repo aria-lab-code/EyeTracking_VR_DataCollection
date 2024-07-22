@@ -1,0 +1,6 @@
+time(100ns),User_ID,linear_score_0,linear_total_score_0,linear_score_1,linear_total_score_1,linear_score_2,linear_total_score_2,arc_score_0,arc_total_score_0,arc_score_1,arc_total_score_1,arc_score_2,arc_total_score_2,rapid_score_0,rapid_total_score_0,rapid_score_1,rapid_total_score_1,rapid_score_2,rapid_total_score_2,avoid_score_0,avoid_total_score_0,avoid_score_1,avoid_total_score_1,avoid_score_2,avoid_total_score_2
+638520707930941708,110,561,631,483,630,528,631,0,631,0,631,0,631,7,7,6,6,5,5,2,4,4,4,4,5
+638520716148572151,112,439,631,452,631,518,631,212,631,513,631,134,631,7,7,9,9,5,5,5,5,6,6,3,4
+638521428900144430,111111,473,631,572,631,557,631,583,631,504,631,548,631,7,7,6,6,5,5,4,4,6,6,6,6
+638525002594571928,999999,7029,8104,7126,8104,6798,8104,6287,8104,6578,8104,5382,8104,112,112,103,104,103,105,110,111,112,113,105,106
+638549106385201420,Narayani,1688,4052,1549,4052,1720,4052,1333,4052,619,4052,1003,4052,26,30,36,39,33,36,40,42,29,34,23,30
