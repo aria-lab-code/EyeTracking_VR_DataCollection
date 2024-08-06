@@ -14,7 +14,7 @@ using System.Collections.Generic;
 using TMPro;
 using System.Linq;
 
-public class GazeCollection2 : MonoBehaviour
+public class GazeCollectionWithModel : MonoBehaviour
 {
     #region "file ID information"
     /// <summary>
@@ -24,9 +24,9 @@ public class GazeCollection2 : MonoBehaviour
     public string UserIDNum;       // Display the UserID in the 
     public string Path;             // TODO: Change this to the path to the SSD directory
     private static string UserID;
-    private static int trailNum;
+    private static int trialNum;
     private static string File_Path;
-    private static string Record_name = "ScoreRecord" + ".txt";
+    private static readonly string Record_name = "ScoreRecordWithModel.txt";
     #endregion
 
     #region "GUI interactions"
@@ -39,17 +39,17 @@ public class GazeCollection2 : MonoBehaviour
     public List<GameObject> GazeObjs;
     public Button calibrationButton;
     public Button continueButton;
-
     //public TextMesh infoMessage;
+    public List<GameObject> hands;
     #endregion
+
     private const int randomSeed = 43;
     private bool firstFrame;
 
     private const int SHORT_BREAK = 5;
     private float gameTime;
     private static TestType Testing;
-    private const float totalGameTime = 45;
-    
+    private const float totalGameTime = 15;
 
     #region "EyeDataParameters"
     public EyeParameter eye_parameter = new EyeParameter();
@@ -61,18 +61,13 @@ public class GazeCollection2 : MonoBehaviour
     private static Vector3 gaze_origin_L, gaze_origin_R, origin_L, origin_R;
     private static Vector3 gaze_direct_L, gaze_direct_R, direct_L, direct_R;
     private static double gaze_sensitive;
-    private static Stopwatch timer = new Stopwatch();
+    private static readonly Stopwatch timer = new Stopwatch();
     private static Vector3 forward;
-
-
     #endregion
 
     public static int score = 0;
     public static int total_score = 0;
-    private Dictionary<string, int> score_record = new Dictionary<string, int>();
-
-    public List<GameObject> hands;
-
+    private readonly Dictionary<string, int> score_record = new Dictionary<string, int>();
 
     /// <summary>
     /// Parameters for time-related information.
@@ -88,7 +83,7 @@ public class GazeCollection2 : MonoBehaviour
     private const float mm_to_m = 1.0f / 1000.0f;
 
     private static Vector3 currentPos = Vector3.zero, currentVel = Vector3.zero;
-    private bool calibrated = false;
+    public bool calibrated;
     [Header("RayCastSetting")]
     public LayerMask RayCastLayers;
 
@@ -99,7 +94,9 @@ public class GazeCollection2 : MonoBehaviour
         using (StreamWriter sw = new StreamWriter(path, false))
         {
             foreach (string s in quotelist)
+            {
                 sw.WriteLine(s);
+            }
         }
         //File.WriteAllLines(path, quotelist.ToArray());
     }
@@ -109,16 +106,14 @@ public class GazeCollection2 : MonoBehaviour
     /// </summary>
     void Start()
     {
-        
         Path = Directory.GetCurrentDirectory();
-        File_Path = Path + "\\userIDList.txt";
+        File_Path = Path + "\\userIDListWithModel.txt";
 
         using (StreamReader sr = new StreamReader(File_Path))
         {
             UserID = sr.ReadLine().Trim();
- 
         }
-        trailNum = 0;
+        trialNum = 0;
         UserIDNum = UserID;
         RemoveFirstLine(File_Path);
 
@@ -130,14 +125,15 @@ public class GazeCollection2 : MonoBehaviour
         continueClicked = false;
         calibrationClicked = false;
         forward = Camera.main.transform.forward;
-        
-        Invoke("SystemCheck", 0.5f);                // System check.
-       
-        
-        calibrated = false; // Should be False at Test Time
-        while(!calibrated)
-            calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();     // Perform calibration for eye tracking.
 
+        Invoke("SystemCheck", 0.5f);                // System check.
+
+
+        //calibrated = false; // Should be False at Test Time
+        while (!calibrated)
+        {
+            calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();     // Perform calibration for eye tracking.
+        }
 
         firstFrame = true;
         GazeObject1 = GameObject.Find("Gaze Focusable Object 1");
@@ -167,9 +163,10 @@ public class GazeCollection2 : MonoBehaviour
         AvoidObject1.SetActive(false);
         AvoidObject2.SetActive(false);
         AvoidObject3.SetActive(false);
-        
+
 
     }
+
     void RapidMovementObjectData_txt()
     {
         string variable =
@@ -185,8 +182,9 @@ public class GazeCollection2 : MonoBehaviour
         "object3.y" + "," +
         "object3.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum}.txt", variable);
     }
+
     void LinearPursuitObjectData_txt()
     {
         string variable =
@@ -196,8 +194,9 @@ public class GazeCollection2 : MonoBehaviour
         "object1.y" + "," +
         "object1.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", variable);
     }
+
     void ArcPursuitObjectData_txt()
     {
         string variable =
@@ -207,8 +206,9 @@ public class GazeCollection2 : MonoBehaviour
         "object1.y" + "," +
         "object1.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", variable);
     }
+
     void AvoidMovementObjectData_txt()
     {
         string variable =
@@ -233,8 +233,9 @@ public class GazeCollection2 : MonoBehaviour
         "AvoidObject3.y" + "," +
         "AvoidObject3.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", variable);
     }
+
     void Data_txt()
     {
         string variable =
@@ -252,9 +253,9 @@ public class GazeCollection2 : MonoBehaviour
         "forward.z" + "," +
         Environment.NewLine;
 
-        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") +"_"+ trailNum.ToString() + ".txt", variable);
-
+        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", variable);
     }
+
     void Record_txt()
     {
         if (!File.Exists(Record_name))
@@ -282,7 +283,6 @@ public class GazeCollection2 : MonoBehaviour
         File.AppendAllText(Record_name, value);
     }
 
-
     void Measurement()
     {
         EyeParameter eye_parameter = new EyeParameter();
@@ -298,18 +298,15 @@ public class GazeCollection2 : MonoBehaviour
         UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
         if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == true && eye_callback_registered == false)
         {
-
             SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
             eye_callback_registered = true;
         }
-
         else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
         {
             SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
             eye_callback_registered = false;
         }
     }
-
 
     void Release()
     {
@@ -334,7 +331,7 @@ public class GazeCollection2 : MonoBehaviour
         {
             UnityEngine.Debug.Log("Eye parameters are measured.");
         }
-        
+
         Error result_eye_init = SRanipal_API.Initial(SRanipal_Eye_v2.ANIPAL_TYPE_EYE_V2, IntPtr.Zero);
 
         if (result_eye_init == Error.WORK)
@@ -355,15 +352,16 @@ public class GazeCollection2 : MonoBehaviour
     {
         continueClicked = true;
     }
+
     public void CalibrationClicked()
     {
         calibrationClicked = true;
     }
+
     struct RawGazeRays
     {
         public Vector3 origin;
         public Vector3 dir;
-
 
         public RawGazeRays Absolute(Transform t)
         {
@@ -386,8 +384,6 @@ public class GazeCollection2 : MonoBehaviour
             SRanipal_Eye_v2.GetGazeRay(gazeIndex, out r.origin, out r.dir);
         }
     }
-
-
 
     /// <summary>
     /// Update is called once per frame.
@@ -416,6 +412,7 @@ public class GazeCollection2 : MonoBehaviour
                 foreach (var obj in GazeObjs)
                 {
                     obj.GetComponent<HighlightAtGaze>().GazeFocusChanged(obj == hit.transform.gameObject);
+                    // TODO: Increment score here instead of from `HighlightAtGaze`.
                 }
             }
         }
@@ -543,123 +540,148 @@ public class GazeCollection2 : MonoBehaviour
             firstFrame = false;
         }
     }
+
+    #region Callback
     /// <summary>
     /// The Callback functions is to record the data(gaze/forward data, object data) to the txt file.
     /// </summary>
-    #region Callback
 
     void RapidMovementObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
-        string[] obj1Position = {GazeObject1.transform.position.x.ToString(),
-                                 GazeObject1.transform.position.y.ToString(),
-                                 GazeObject1.transform.position.z.ToString() 
-                                 };
-        string[] obj2Position ={GazeObject2.transform.position.x.ToString(),
-                                 GazeObject2.transform.position.y.ToString(),
-                                 GazeObject2.transform.position.z.ToString() };
-        string[] obj3Position = {GazeObject3.transform.position.x.ToString(),
-                                 GazeObject3.transform.position.y.ToString(),
-                                 GazeObject3.transform.position.z.ToString() };
+        string[] obj1Position = {
+            GazeObject1.transform.position.x.ToString(),
+            GazeObject1.transform.position.y.ToString(),
+            GazeObject1.transform.position.z.ToString()
+        };
+        string[] obj2Position ={
+            GazeObject2.transform.position.x.ToString(),
+            GazeObject2.transform.position.y.ToString(),
+            GazeObject2.transform.position.z.ToString()
+        };
+        string[] obj3Position = {
+            GazeObject3.transform.position.x.ToString(),
+            GazeObject3.transform.position.y.ToString(),
+            GazeObject3.transform.position.z.ToString()
+        };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-obj2Position[0] + "," +
-obj2Position[1] + "," +
-obj2Position[2] + "," + 
-obj3Position[0] + "," +
-obj3Position[1] + "," +
-obj3Position[2] + "," +
-
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trailNum.ToString()}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            obj2Position[0] + "," +
+            obj2Position[1] + "," +
+            obj2Position[2] + "," +
+            obj3Position[0] + "," +
+            obj3Position[1] + "," +
+            obj3Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum}.txt", value);
     }
+
     void AvoidMovementObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
-        string[] obj1Position = {GazeObject1.transform.position.x.ToString(),
-                                 GazeObject1.transform.position.y.ToString(),
-                                 GazeObject1.transform.position.z.ToString() };
-        string[] obj2Position ={GazeObject2.transform.position.x.ToString(),
-                                 GazeObject2.transform.position.y.ToString(),
-                                 GazeObject2.transform.position.z.ToString() };
-        string[] obj3Position = {GazeObject3.transform.position.x.ToString(),
-                                 GazeObject3.transform.position.y.ToString(),
-                                 GazeObject3.transform.position.z.ToString() };
-        string[] obj4Position = {AvoidObject1.transform.position.x.ToString(),
-                                 AvoidObject1.transform.position.y.ToString(),
-                                 AvoidObject1.transform.position.z.ToString() };
-        string[] obj5Position = {AvoidObject2.transform.position.x.ToString(),
-                                 AvoidObject2.transform.position.y.ToString(),
-                                 AvoidObject2.transform.position.z.ToString() };
-        string[] obj6Position = {AvoidObject3.transform.position.x.ToString(),
-                                 AvoidObject3.transform.position.y.ToString(),
-                                 AvoidObject3.transform.position.z.ToString() };
+        string[] obj1Position = {
+            GazeObject1.transform.position.x.ToString(),
+            GazeObject1.transform.position.y.ToString(),
+            GazeObject1.transform.position.z.ToString()
+        };
+        string[] obj2Position ={
+            GazeObject2.transform.position.x.ToString(),
+            GazeObject2.transform.position.y.ToString(),
+            GazeObject2.transform.position.z.ToString()
+        };
+        string[] obj3Position = {
+            GazeObject3.transform.position.x.ToString(),
+            GazeObject3.transform.position.y.ToString(),
+            GazeObject3.transform.position.z.ToString()
+        };
+        string[] obj4Position = {
+            AvoidObject1.transform.position.x.ToString(),
+            AvoidObject1.transform.position.y.ToString(),
+            AvoidObject1.transform.position.z.ToString()
+        };
+        string[] obj5Position = {
+            AvoidObject2.transform.position.x.ToString(),
+            AvoidObject2.transform.position.y.ToString(),
+            AvoidObject2.transform.position.z.ToString()
+        };
+        string[] obj6Position = {
+            AvoidObject3.transform.position.x.ToString(),
+            AvoidObject3.transform.position.y.ToString(),
+            AvoidObject3.transform.position.z.ToString()
+        };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-obj2Position[0] + "," +
-obj2Position[1] + "," +
-obj2Position[2] + "," +
-obj3Position[0] + "," +
-obj3Position[1] + "," +
-obj3Position[2] + "," +
-obj4Position[0] + "," +
-obj4Position[1] + "," +
-obj4Position[2] + "," +
-obj5Position[0] + "," +
-obj5Position[1] + "," +
-obj5Position[2] + "," +
-obj6Position[0] + "," +
-obj6Position[1] + "," +
-obj6Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trailNum.ToString()}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            obj2Position[0] + "," +
+            obj2Position[1] + "," +
+            obj2Position[2] + "," +
+            obj3Position[0] + "," +
+            obj3Position[1] + "," +
+            obj3Position[2] + "," +
+            obj4Position[0] + "," +
+            obj4Position[1] + "," +
+            obj4Position[2] + "," +
+            obj5Position[0] + "," +
+            obj5Position[1] + "," +
+            obj5Position[2] + "," +
+            obj6Position[0] + "," +
+            obj6Position[1] + "," +
+            obj6Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", value);
     }
+
     void LinearPursuitObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
-        string[] obj1Position = {TrackObjectLine.transform.position.x.ToString(),
-                                 TrackObjectLine.transform.position.y.ToString(),
-                                 TrackObjectLine.transform.position.z.ToString() };
+        string[] obj1Position = {
+            TrackObjectLine.transform.position.x.ToString(),
+            TrackObjectLine.transform.position.y.ToString(),
+            TrackObjectLine.transform.position.z.ToString()
+        };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trailNum.ToString()}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", value);
     }
+
     void ArcPursuitObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
-        string[] obj1Position = {TrackObjectLine.transform.position.x.ToString(),
-                                 TrackObjectLine.transform.position.y.ToString(),
-                                 TrackObjectLine.transform.position.z.ToString() };
+        string[] obj1Position = {
+            TrackObjectLine.transform.position.x.ToString(),
+            TrackObjectLine.transform.position.y.ToString(),
+            TrackObjectLine.transform.position.z.ToString()
+        };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trailNum.ToString()}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", value);
     }
+
     /// <summary>
     /// Callback function to record the eye movement data.
     /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
@@ -674,53 +696,53 @@ Environment.NewLine;
         EyeParameter eye_parameter = new EyeParameter();
         SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
         eyeData = eye_data;
-        
 
         // Measure eye movements at the frequency of 120Hz until framecount reaches the max framecount set.
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref eyeData);
         //if (error == ViveSR.Error.WORK)
-        {
-            // -----------------------------------------------------------------------------------------
-            //  Measure each parameter of eye data that are specified in the guideline of SRanipal SDK.
-            // -----------------------------------------------------------------------------------------
-            MeasureTime = DateTime.Now.Ticks;
-            timeSpan = timer.ElapsedMilliseconds;
-            time_stamp = eyeData.timestamp;
-            eye_valid_L = eyeData.verbose_data.left.eye_data_validata_bit_mask;
-            eye_valid_R = eyeData.verbose_data.right.eye_data_validata_bit_mask;
-            gaze_origin_L = eyeData.verbose_data.left.gaze_origin_mm * mm_to_m; // right handed coordinate system
-            gaze_origin_R = eyeData.verbose_data.right.gaze_origin_mm * mm_to_m;
-            gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
-            gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
+        //{
+        // -----------------------------------------------------------------------------------------
+        //  Measure each parameter of eye data that are specified in the guideline of SRanipal SDK.
+        // -----------------------------------------------------------------------------------------
+        MeasureTime = DateTime.Now.Ticks;
+        timeSpan = timer.ElapsedMilliseconds;
+        time_stamp = eyeData.timestamp;
+        eye_valid_L = eyeData.verbose_data.left.eye_data_validata_bit_mask;
+        eye_valid_R = eyeData.verbose_data.right.eye_data_validata_bit_mask;
+        gaze_origin_L = eyeData.verbose_data.left.gaze_origin_mm * mm_to_m; // right handed coordinate system
+        gaze_origin_R = eyeData.verbose_data.right.gaze_origin_mm * mm_to_m;
+        gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
+        gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
 
-            gaze_sensitive = eye_parameter.gaze_ray_parameter.sensitive_factor;
-            
-            string value =
-                MeasureTime.ToString() + "," +
-                timeSpan.ToString() + "," +
-                frame.ToString() + "," +
-                gaze_direct_L.x.ToString() + "," +
-                gaze_direct_L.y.ToString() + "," +
-                gaze_direct_L.z.ToString() + "," +
-                gaze_direct_R.x.ToString() + "," +
-                gaze_direct_R.y.ToString() + "," +
-                gaze_direct_R.z.ToString() + "," +
-                //gaze_sensitive.ToString() + "," +
-                forward.x.ToString() + "," +
-                forward.y.ToString() + "," +
-                forward.z.ToString() + "," +
-                Environment.NewLine;
+        gaze_sensitive = eye_parameter.gaze_ray_parameter.sensitive_factor;
 
-            File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trailNum.ToString() + ".txt", value);
+        string value =
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            frame.ToString() + "," +
+            gaze_direct_L.x.ToString() + "," +
+            gaze_direct_L.y.ToString() + "," +
+            gaze_direct_L.z.ToString() + "," +
+            gaze_direct_R.x.ToString() + "," +
+            gaze_direct_R.y.ToString() + "," +
+            gaze_direct_R.z.ToString() + "," +
+            //gaze_sensitive.ToString() + "," +
+            forward.x.ToString() + "," +
+            forward.y.ToString() + "," +
+            forward.z.ToString() + "," +
+            Environment.NewLine;
 
-            cnt_callback++;
-        }
-        
+        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", value);
+
+        cnt_callback++;
+        //}
     }
+
     #endregion
+
     /// <summary>
     /// Saccade task sequence.
-    /// The function controll the test process, including the information message(breakMessage2)
+    /// The function control the test process, including the information message(breakMessage2)
     /// 
     /// </summary>
     private IEnumerator Sequence()
@@ -731,7 +753,7 @@ Environment.NewLine;
         // Participants should see the paper version during the consent process https://docs.google.com/document/d/13ehQgG4bj30qM26owmaHe9gsbGhAz9uMMaSYZKIm2cA/edit?usp=sharing
 
         //****Introduction about the game****
-        
+
         breakMessage2.text = "Welcome to the virtual environment.\n" +
                              "In this test, please remain stationary while you control\n" +
                              " your movements using only your neck and eyes.\n" +
@@ -747,7 +769,7 @@ Environment.NewLine;
                              "Should you accidentally click <Rest>, please be aware that you\n" +
                              " will be required to perform the calibration process again.";
         yield return StartCoroutine(DisplayCalibrationMenu());
-        
+
         breakMessage2.text = "The blue cube is the focused cube. The player should try to follow\n" +
                              " the cube in the Linear Pursuit section and the Arc Pursuit Section.\n" +
                              "When the player looks at the cube, it will turn green.\n" +
@@ -776,32 +798,31 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayBreakMenu());
         //****End of Introduction****
 
-
         UnityEngine.Random.seed = randomSeed;
         breakMessage2.text = "During the Linear Pursuit section, your goal is to track the cube along its designated path.\n" +
                              "As the player, you will participate in three rounds, with rest intervals between each round.\n" +
-                             "Please click <Continue> to procee the test";
+                             "Please click <Continue> to start the test.";
         yield return StartCoroutine(DisplayBreakMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
-        
+        trialNum++;
+
         breakMessage2.text = "You have completed the first round of the Linear Pursuit Test.\n" +
-                             "If you would like to take a break, you can click <Rest> and remove the headset now.\n"+
+                             "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
-                             "Alternatively, you can click <Continue> to proceed with the next round of the Linear Pursuit section."; 
+                             "Alternatively, you can click <Continue> to proceed with the next round of the Linear Pursuit section.";
         yield return StartCoroutine(DisplayCalibrationMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Linear Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -810,33 +831,33 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCalibrationMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum = 0;
+        trialNum = 0;
 
         //****Arc Pursuit section(3 games)
         breakMessage2.text = "You have completed the Linear Pursuit Test!\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
                              "Alternatively, you can click <Continue> to proceed with Arc Pursuit section.";
-        
+
         yield return StartCoroutine(DisplayCalibrationMenu());
         breakMessage2.text = "During the Arc Pursuit section, your goal is to track the cube along its designated path.\n" +
                              "As the player, you will participate in three rounds, with rest intervals between each round.\n" +
-                             "Please click <Continue> to procee the test";
+                             "Please click <Continue> to start the test.";
         yield return StartCoroutine(DisplayBreakMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the first round of the Arc Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -848,11 +869,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Arc Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -864,13 +885,13 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum = 0;
-        
+        trialNum = 0;
+
         breakMessage2.text = "You have completed the Arc Pursuit Test!\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
@@ -881,16 +902,16 @@ Environment.NewLine;
                              "As the player, you will participate in three rounds, with rest intervals between each round.\n" +
                              "Press <Continue> when you are ready to start.";
         yield return StartCoroutine(DisplayBreakMenu());
-        
+
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum++;
-        
+        trialNum++;
+
         breakMessage2.text = "You have completed the first round of the Rapid Movement Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
@@ -901,12 +922,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
 
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
-
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Rapid Movement Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -918,32 +938,32 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
 
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum=0;
+        trialNum = 0;
         breakMessage2.text = "You have completed the Rapid Movement Test!\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
                              "Alternatively, you can click <Continue> to proceed with Rapid Avoid section.";
         yield return StartCoroutine(DisplayCalibrationMenu());
-        
+
 
         breakMessage2.text = "For the Rapid Avoid section of the test, six cubes will spawn in different locations in front of you and start moving towards you.\n" +
                              "Your goal is to look at the blue cubes to reset their movement before they reach you, while avoiding looking at the yellow cubes.\n" +
                              "As the player, you will participate in three rounds, with rest intervals between each round.\n" +
                              "Press <Continue> when you are ready to begin.";
         yield return StartCoroutine(DisplayBreakMenu());
-        
+
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the first round of the Rapid Avoid Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -955,11 +975,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
 
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Rapid Avoid Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -971,8 +991,8 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
 
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
@@ -982,7 +1002,6 @@ Environment.NewLine;
                              "Thank you for participating in our test!";
         Record_txt();
         yield return StartCoroutine(DisplayBreakMenu());
-
     }
 
     private IEnumerator DisplayFocus()
@@ -994,7 +1013,7 @@ Environment.NewLine;
         TrackObjectLine.SetActive(true);
         Testing = TestType.SmoothLinearTest;
         gameTime = Time.time;
-        while (!continueClicked && Time.time-gameTime<30)
+        while (!continueClicked && Time.time - gameTime < 30)
         {
             yield return null;
         }
@@ -1063,6 +1082,7 @@ Environment.NewLine;
         continueClicked = false;
         Testing = TestType.None;
     }
+
     /// <summary>
     /// Suspends the game until the continue button is pressed.
     /// This can be used to give the user a break between sections where the data gathered can be ignored.
@@ -1081,7 +1101,7 @@ Environment.NewLine;
             //UnityEngine.Debug.Log($"continueClicked_inwhile:{continueClicked}");
             yield return null;
         }
-        
+
         //UnityEngine.Debug.Log($"continueClicked_outwhile:{continueClicked}");
         BreakCanvas2.enabled = false;
         BreakCanvas2.gameObject.SetActive(false);
@@ -1114,11 +1134,15 @@ Environment.NewLine;
             breakMessage2.text = "When you are ready to proceed with the game, kindly select the <Calibration> button.";
             continueButton.gameObject.SetActive(false);
             continueButton.enabled = false;
-            
+
             while (!calibrationClicked)
+            {
                 yield return null;
+            }
             while (!calibrated)
+            {
                 calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();
+            }
             calibrated = true;
             breakMessage2.text = "Please click <Continue> to proceed with the game.";
             continueButton.gameObject.SetActive(true);
@@ -1129,6 +1153,7 @@ Environment.NewLine;
                 yield return null;
             }
         }
+
         //UnityEngine.Debug.Log($"continueClicked_outwhile:{continueClicked}");
         BreakCanvas2.enabled = false;
         BreakCanvas2.gameObject.SetActive(false);
@@ -1166,7 +1191,7 @@ Environment.NewLine;
         Testing = TestType.RapidMovementTest;
 
         total_score = score = 0;
-        Invoke("Measurement", 0f);
+        Invoke(nameof(Measurement), 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
         {
@@ -1198,12 +1223,12 @@ Environment.NewLine;
     {
         EnableHand(false);
         TrackObjectLine.SetActive(true);
-        
+
         cnt_callback = 0;
         LinearPursuitObjectData_txt();
         score = total_score = 0;
         Testing = TestType.SmoothLinearTest;
-        Invoke("Measurement", 0f);
+        Invoke(nameof(Measurement), 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
         {
@@ -1211,7 +1236,7 @@ Environment.NewLine;
             {
                 var global_angle = Vector3.Angle(forward, new Vector3(0, 0, 1));
                 breakMessage2.text = $"global angle:{global_angle}, (x,y,z)={forward.x}, {forward.y}, {forward.z}";
-                
+
                 BreakCanvas2.enabled = true;
                 BreakCanvas2.gameObject.SetActive(true);
             }
@@ -1238,7 +1263,7 @@ Environment.NewLine;
         ArcPursuitObjectData_txt();
         score = total_score = 0;
         Testing = TestType.SmoothArcTest;
-        Invoke("Measurement", 0f);
+        Invoke(nameof(Measurement), 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
         {
@@ -1276,7 +1301,7 @@ Environment.NewLine;
         AvoidMovementObjectData_txt();
         Testing = TestType.RapidAvoidTest;
 
-        Invoke("Measurement", 0f);
+        Invoke(nameof(Measurement), 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
         {
@@ -1293,9 +1318,10 @@ Environment.NewLine;
         EnableHand(true);
         Release();
     }
+
     void EnableHand(bool enable)
     {
-        foreach( GameObject h in hands)
+        foreach (GameObject h in hands)
         {
             h.SetActive(enable);
         }

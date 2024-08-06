@@ -27,13 +27,12 @@ public class HighlightAtGaze : MonoBehaviour
     //The method of the "IGazeFocusable" interface, which will be called when this object receives or loses focus
     public void GazeFocusChanged(bool hasFocus)
     {
-        
-        //If this object received focus, fade the object's color to highlight color
+        // If this object received focus, fade the object's color to highlight color
         if (hasFocus)
         {
             _targetColor = highlightColor;
         }
-        //If this object lost focus, fade the object's color to it's original color
+        // If this object lost focus, fade the object's color to it's original color
         else
         {
             _targetColor = _originalColor;
@@ -55,19 +54,20 @@ public class HighlightAtGaze : MonoBehaviour
 
     void OnEnable()
     {
-
-
         startTime = Time.time;
         focusTime = Time.time;
         if (focused)
         {
-            GazeCollection2.score++;
+            GazeCollection2.score++; // TODO: That's kinda janky, but w/e.
+            GazeCollectionWithModel.score++;
         }
-        focused =false;
+        focused = false;
         _renderer = GetComponent<Renderer>();
         GazeCollection2.total_score++;
+        GazeCollectionWithModel.total_score++;
 
-        if (init) {
+        if (init)
+        {
             _originalColor = _renderer.material.color;
         }
         _targetColor = _originalColor;
@@ -95,13 +95,12 @@ public class HighlightAtGaze : MonoBehaviour
 
         transform.rotation = Quaternion.LookRotation(-1 * initPos);
         init = false;
-
     }
 
     private void Update()
     {
         //transform.Translate(Vector3.forward * speed * Time.deltaTime);
-        //This lerp will fade the color of the object
+        // This lerp will fade the color of the object
         transform.position += -3 * initPos / 20 * Time.deltaTime;
         if (_renderer.material.HasProperty(_baseColor)) // new rendering pipeline (lightweight, hd, universal...)
         {
@@ -111,9 +110,9 @@ public class HighlightAtGaze : MonoBehaviour
         {
             _renderer.material.color = Color.Lerp(_renderer.material.color, _targetColor, Time.deltaTime * (1 / animationTime));
         }
-        if (Time.time - focusTime > 0.3 && focused || Time.time - startTime > 7) {
+        if (Time.time - focusTime > 0.3 && focused || Time.time - startTime > 7)
+        {
             OnEnable();
-
         }
     }
 }

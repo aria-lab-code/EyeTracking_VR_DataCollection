@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class DisableHeadTracking : MonoBehaviour
 {
-
+    public static bool Disable = false;
 
     void Start()
     {
@@ -16,10 +16,8 @@ public class DisableHeadTracking : MonoBehaviour
     {
         Transform camera = Camera.main.transform;
         Transform camParent = camera.parent;
-        Transform player = camParent.parent;
 
-        bool testing = ModelSim.testing;
-        if (testing)
+        if (Disable)
         {
             camParent.localRotation = Quaternion.Inverse(camera.localRotation);
         }

@@ -2212,7 +2212,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   modelAsset: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
-  use_model: 1
+  use_model: 0
   use_quadrant: 0
   GazeObject1: {fileID: 1517572048}
   GazeObject2: {fileID: 220554465}
@@ -2224,4 +2224,4 @@ MonoBehaviour:
   countdownMessage: {fileID: 576849366}
   BreakCanvas: {fileID: 667567739}
   CountdownCanvas: {fileID: 1226335111}
-  calibrate: 0
+  calibrate: 1

@@ -30,7 +30,6 @@ public class ModelSim : MonoBehaviour
     private static Model m_RuntimeModel;
     public bool is_MLP;
     private static Transform player;
-
     
     private static long MeasureTime;
     private static Vector3 gaze_direct_L, gaze_direct_R, forward;
@@ -52,8 +51,7 @@ public class ModelSim : MonoBehaviour
     private bool firstFrame;
     private bool rapidTesting;
 
-    public static bool testing;
-
+    private const int SECONDS_PER_TRIAL = 30;
     private const int SHORT_BREAK = 5;
     private float gameTime;
 
@@ -80,11 +78,9 @@ public class ModelSim : MonoBehaviour
         }
         else { input = new Tensor(1, 1, 9, 1); }
         
-
-
         first_output = true;
         rapidTesting = false;
-        testing = false;
+        DisableHeadTracking.Disable = false;
 
         // Create buffers for storing the history of gaze vectors.
         gaze_L_buff = new ArrayList();
@@ -125,7 +121,6 @@ public class ModelSim : MonoBehaviour
             SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
             eye_callback_registered = true;
         }
-
         else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
         {
             SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
@@ -165,7 +160,6 @@ public class ModelSim : MonoBehaviour
     {
         public Vector3 origin;
         public Vector3 dir;
-
 
         public RawGazeRays Absolute(Transform t)
         {
@@ -214,7 +208,6 @@ public class ModelSim : MonoBehaviour
         {
             VectorBaseline();
         }
-        
 
         if (rapidTesting)
         {
@@ -247,7 +240,6 @@ public class ModelSim : MonoBehaviour
                 }
                 else
                 {
-
                     GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
                     GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
                     GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
@@ -284,7 +276,7 @@ public class ModelSim : MonoBehaviour
         var new_forward = new Vector3(output[0,0,0,0]-0.05f, output[0,0,0,1], output[0,0,0,2]).normalized;
 
         Quaternion rotation = Quaternion.LookRotation(new_forward);
-        if (testing)
+        if (DisableHeadTracking.Disable)
         {
             player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime*5.0f);
         }
@@ -345,7 +337,7 @@ public class ModelSim : MonoBehaviour
         var new_forward = forward.normalized;
 
         Quaternion rotation = Quaternion.LookRotation(new_forward);
-        if (testing)
+        if (DisableHeadTracking.Disable)
         {
             player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime * 5.0f);
         }
@@ -404,30 +396,23 @@ public class ModelSim : MonoBehaviour
                 }
                 else
                 {
-                    
                     player.Rotate(0, -rotate_speed, 0f, Space.World);
                     //player.rotation = Quaternion.Slerp(player.rotation, left, Time.deltaTime*rotate_speed);
                 }
-                
             }
             else
             {
                 if ( gaze_direct.x > -1 *  gaze_direct.y)
                 {
-                    
                     player.Rotate(0f, rotate_speed, 0f, Space.World);
                 }
                 else
                 {
-                    
                     player.Rotate(rotate_speed, 0f, 0f);
                     //player.rotation = Quaternion.Slerp(player.rotation, down, Time.deltaTime*rotate_speed);
                 }
-                
             }
-
         }
-        
     }
 
     private void ResetHead()
@@ -435,14 +420,12 @@ public class ModelSim : MonoBehaviour
         player.rotation = Quaternion.LookRotation(new Vector3(0,0,1));
     }
 
-
     /// <summary>
     /// Callback function to record the eye movement data.
     /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
     /// </summary>
     private static void GetData(ref EyeData_v2 eye_data)
     {
-        
         EyeParameter eye_parameter = new EyeParameter();
         SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
         eyeData = eye_data;
@@ -457,15 +440,13 @@ public class ModelSim : MonoBehaviour
             // gaze_direct_R.x = gaze_direct_R.x * -1;
 
             setGazeVectors(eyeData.verbose_data.left.gaze_direction_normalized, eyeData.verbose_data.right.gaze_direction_normalized);
-
         }
-        
     }
 
     private static void setGazeVectors(Vector3 gazeL, Vector3 gazeR)
     {
-        gazeL.x = gazeL.x * -1;
-        gazeR.x = gazeR.x * -1;
+        gazeL.x *= -1;
+        gazeR.x *= -1;
 
         gaze_direct_L = gazeL;
         gaze_direct_R = gazeR;
@@ -503,7 +484,8 @@ public class ModelSim : MonoBehaviour
         UnityEngine.Debug.Log("Sequence started");
         // DO NOT REMOVE THE PRIVACY STATEMENT, REQUIRED BY HTC 
         // Participants should see the paper version during the consent process https://docs.google.com/document/d/13ehQgG4bj30qM26owmaHe9gsbGhAz9uMMaSYZKIm2cA/edit?usp=sharing
-        breakMessage.text = "Welcome to the virtual environment. The following is a version of the privacy statement you should have already seen during the consent process." +
+        breakMessage.text =
+            "Welcome to the virtual environment. The following is a version of the privacy statement you should have already seen during the consent process." +
             "\nIf you have not seen this do not continue until the staff provide you with a physical copy of this and have explained it and answered any questions to your satifaction." +
             "\n\n Privacy Statement: While using this virtual environment, data about your facial expressions will be saved." +
             "\n This includes head position and orientation, gaze origin, gaze direction, gaze sensitivity scale, validity of data, time stamps of the data, and details concerning items in the virtual environment." +
@@ -518,26 +500,38 @@ public class ModelSim : MonoBehaviour
             "\n\nPress continue if you agree with the privacy statement and are ready to begin.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        breakMessage.text = "For the Rapid Movement section of the test, 3 cubes wil spawn in various locations in front of you and begin to move towards you." +
-            "\nLook at the cubes to reset them before they reach you. This test will last for 60 seconds. Press continue when you are ready to begin.";
+        breakMessage.text =
+            "For the Rapid Movement section of the test, 3 cubes wil spawn in\n" +
+            "various locations in front of you and begin to move towards you.\n" +
+            "Look at the cubes to reset them before they reach you.\n" +
+            "\n" +
+            "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
+            "Press continue when you are ready to begin.";
         yield return StartCoroutine(DisplayBreakMenu());
 
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
         
-        breakMessage.text = "Rapid Movement Test Complete! When you are ready to begin the Linear Pursuit section of the test, press continue.";
+        breakMessage.text =
+            "Rapid Movement Test Complete!\n" +
+            "\n" +
+            "When you are ready to begin the Linear Pursuit section of the test, press continue.";
         yield return StartCoroutine(DisplayBreakMenu());
 
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
 
-        breakMessage.text = "Linear Pursuit Test Complete! When you are ready to begin the Arc Pursuit section of the test, press continue.";
+        breakMessage.text =
+            "Linear Pursuit Test Complete!\n" +
+            "\n" +
+            "When you are ready to begin the Arc Pursuit section of the test, press continue.";
         yield return StartCoroutine(DisplayBreakMenu());
 
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        breakMessage.text = "All Tests Complete! Thank you!";
+        breakMessage.text =
+            "All Tests Complete! Thank you!";
         yield return StartCoroutine(DisplayBreakMenu());
     }
 
@@ -585,17 +579,17 @@ public class ModelSim : MonoBehaviour
         GazeObject2.SetActive(true);
         GazeObject3.SetActive(true);
         rapidTesting = true;
-        testing = true;
+        DisableHeadTracking.Disable = true;
         ResetModel();
         Invoke("Measurement", 0f);
         gameTime = Time.time;
-        while (Time.time - gameTime < 60)
+        while (Time.time - gameTime < SECONDS_PER_TRIAL)
         {
             //StartCoroutine(UpdateGazeObjects());
             yield return null;
         }
         rapidTesting = false;
-        testing = false;
+        DisableHeadTracking.Disable = false;
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
@@ -606,15 +600,15 @@ public class ModelSim : MonoBehaviour
     private IEnumerator LinearPursuit()
     {
         TrackObjectLine.SetActive(true);
-        testing = true;
+        DisableHeadTracking.Disable = true;
         ResetModel();
         Invoke("Measurement", 0f);
         gameTime = Time.time;
-        while (Time.time - gameTime < 60)
+        while (Time.time - gameTime < SECONDS_PER_TRIAL)
         {
             yield return null;
         }
-        testing = false;
+        DisableHeadTracking.Disable = false;
         TrackObjectLine.SetActive(false);
         ResetHead();
         Release();
@@ -623,15 +617,15 @@ public class ModelSim : MonoBehaviour
     private IEnumerator ArcPursuit()
     {
         TrackObjectArc.SetActive(true);
-        testing = true;
+        DisableHeadTracking.Disable = true;
         ResetModel();
         Invoke("Measurement", 0f);
         gameTime = Time.time;
-        while (Time.time - gameTime < 60)
+        while (Time.time - gameTime < SECONDS_PER_TRIAL)
         {
             yield return null;
         }
-        testing = false;
+        DisableHeadTracking.Disable = false;
         TrackObjectArc.SetActive(false);
         ResetHead();
         Release();

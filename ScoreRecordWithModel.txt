@@ -1,0 +1,2 @@
+time(100ns),User_ID,linear_score_0,linear_total_score_0,linear_score_1,linear_total_score_1,linear_score_2,linear_total_score_2,arc_score_0,arc_total_score_0,arc_score_1,arc_total_score_1,arc_score_2,arc_total_score_2,rapid_score_0,rapid_total_score_0,rapid_score_1,rapid_total_score_1,rapid_score_2,rapid_total_score_2,avoid_score_0,avoid_total_score_0,avoid_score_1,avoid_total_score_1,avoid_score_2,avoid_total_score_2
+638585433413226497,E1,1205,1351,1269,1351,1276,1351,1124,1351,1120,1352,1138,1351,0,0,0,0,0,0,0,0,0,0,0,0

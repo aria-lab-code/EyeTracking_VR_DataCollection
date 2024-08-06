@@ -23,6 +23,7 @@ public class AvoidObstacleTest : MonoBehaviour
     private float startTime;
     private bool init = true;
     public Transform camera;
+
     //The method of the "IGazeFocusable" interface, which will be called when this object receives or loses focus
     public void GazeFocusChanged(bool hasFocus)
     {
