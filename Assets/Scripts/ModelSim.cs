@@ -15,93 +15,134 @@ using Unity.Barracuda;
 
 public class ModelSim : MonoBehaviour
 {
-    private static int frame;
-    public NNModel modelAsset;
-    public static bool useModel;
-    public bool use_model;
-    private static IWorker worker;
-    private static bool first_output;
-    public bool use_quadrant;
-    public static bool useQuadrant;
-    public GameObject GazeObject1;
-    public GameObject GazeObject2, GazeObject3, TrackObjectLine, TrackObjectArc;
+    public enum ModelType
+    {
+        None,
+        BaselineQuadrant,
+        BaselineVector,
+        LSTM,
+        MLP
+    }
 
-    public static int playerID;
-    private static Model m_RuntimeModel;
-    public bool is_MLP;
-    private static Transform player;
-    
-    private static long MeasureTime;
-    private static Vector3 gaze_direct_L, gaze_direct_R, forward;
-    private static ArrayList gaze_L_buff, gaze_R_buff, forward_buff;  // Create a buffer to hold a small history of states
+    public enum TestType
+    {
+        None,
+        SmoothLinearTest,
+        SmoothArcTest,
+        RapidMovementTest,
+    }
+
+    private static int _frame;
+
+    private static int _playerID;
+    private static Transform _player;
+
+    private ModelType _modelType = ModelType.MLP;
+
+    public NNModel ModelAssetLSTM;
+    private static Model _modelLSTM;
+    private static Tensor _tensorLSTMInput, _tensorLSTMHidden, _tensorLSTMContext;
+    //private static bool first_output;
+    private static IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
+
+    public NNModel ModelAssetMLP;
+    private static Model _modelMLP;
+    private static Tensor _tensorMLPInput;
+    private static IWorker _workerMLP;
+
+    private static Vector3 _vecGazeL, _vecGazeR, _vecForward;
+    private static List<Vector3> _bufferGazeL, _bufferGazeR, _bufferForward;  // Create a buffer to hold a small history of states
     private const int BUFFER_CAPACITY = 3;
-    private static Tensor input, hn, cn;
 
     #region "GUI interactions"
-    public TextMesh breakMessage, countdownMessage;
+    public GameObject GazeObject1, GazeObject2, GazeObject3, TrackObjectLine, TrackObjectArc;
     public Canvas BreakCanvas, CountdownCanvas;
-    private bool continueClicked;
+    public TextMesh BreakMessage, CountdownMessage;
+    private bool _continueClicked;
     #endregion
 
-    public EyeParameter eye_parameter = new EyeParameter();
-    public GazeRayParameter gaze = new GazeRayParameter();
-    private static EyeData_v2 eyeData = new EyeData_v2();
-    private static bool eye_callback_registered = false;
+    private EyeParameter _eyeParameter = new EyeParameter();
+    private GazeRayParameter _gaze = new GazeRayParameter();
+    private static EyeData_v2 _eyeData = new EyeData_v2();
+    private static bool _eyeCallbackRegistered = false;
 
-    private bool firstFrame;
-    private bool rapidTesting;
+    private bool _firstFrame;
+    private TestType _testType;
 
-    private const int SECONDS_PER_TRIAL = 30;
+    //private const int SECONDS_PER_TRIAL = 30;
+    private const int SECONDS_PER_TRIAL = 8;
     private const int SHORT_BREAK = 5;
-    private float gameTime;
+    private float _gameTime;
 
-    public bool calibrate;
+    public bool Calibrate;
 
     // Start is called before the first frame update
     void Start()
     {
-        Invoke("SystemCheck", 0.5f);                // System check.
-        if (calibrate)
+        Invoke(nameof(SystemCheck), 0.5f);                // System check.
+        if (Calibrate)
         {
             SRanipal_Eye_v2.LaunchEyeCalibration();
         }
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
 
-        player = Camera.main.transform.parent.parent;
-        m_RuntimeModel = ModelLoader.Load(modelAsset);
-        worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, m_RuntimeModel);
-        hn = new Tensor(1, 1, 9, 1);
-        cn = new Tensor(1, 1, 9, 1);
-        if (is_MLP)
-        {
-            input = new Tensor(1, 1, 27, 1);
-        }
-        else { input = new Tensor(1, 1, 9, 1); }
-        
-        first_output = true;
-        rapidTesting = false;
+        _player = Camera.main.transform.parent.parent;
+
+        _modelLSTM = ModelLoader.Load(ModelAssetLSTM);
+        _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
+        _tensorLSTMHidden = new Tensor(1, 1, 9, 1);
+        _tensorLSTMContext = new Tensor(1, 1, 9, 1);
+        _tensorLSTMInput = new Tensor(1, 1, 9, 1);
+
+        _modelMLP = ModelLoader.Load(ModelAssetMLP);
+        _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
+        _tensorMLPInput = new Tensor(1, 1, 27, 1);
+
+        //first_output = true;
+        _testType = TestType.None;
         DisableHeadTracking.Disable = false;
 
         // Create buffers for storing the history of gaze vectors.
-        gaze_L_buff = new ArrayList();
-        gaze_R_buff = new ArrayList();
-        forward_buff = new ArrayList();
+        _bufferGazeL = new List<Vector3>();
+        _bufferGazeR = new List<Vector3>();
+        _bufferForward = new List<Vector3>();
 
-        firstFrame = true;
-        // GazeObject1 = GameObject.Find("Gaze Focusable Object 1");
-        //  GazeObject2 = GameObject.Find("Gaze Focusable Object 2");
-        // GazeObject3 = GameObject.Find("Gaze Focusable Object 3");
-        // TrackObjectLine = GameObject.Find("Tracking Object 1");
-        // TrackObjectArc = GameObject.Find("Tracking Object 2");
+        _firstFrame = true;
 
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
-        continueClicked = false;
-        useModel = use_model;
-        useQuadrant = use_quadrant;
+        _continueClicked = false;
+    }
+
+    /// <summary>
+    /// Check if the system works properly.
+    /// </summary>
+    void SystemCheck()
+    {
+        if (SRanipal_Eye_API.GetEyeData_v2(ref _eyeData) == ViveSR.Error.WORK)
+        {
+            UnityEngine.Debug.Log("Device is working properly.");
+        }
+
+        if (SRanipal_Eye_API.GetEyeParameter(ref _eyeParameter) == ViveSR.Error.WORK)
+        {
+            UnityEngine.Debug.Log("Eye parameters are measured.");
+        }
+
+        Error result_eye_init = SRanipal_API.Initial(SRanipal_Eye_v2.ANIPAL_TYPE_EYE_V2, IntPtr.Zero);
+
+        if (result_eye_init == Error.WORK)
+        {
+            UnityEngine.Debug.Log("[SRanipal] Initial Eye v2: " + result_eye_init);
+        }
+        else
+        {
+            UnityEngine.Debug.LogError("[SRanipal] Initial Eye v2: " + result_eye_init);
+            UnityEditor.EditorApplication.isPlaying = false;
+        }
     }
 
     void Measurement()
@@ -116,43 +157,80 @@ public class ModelSim : MonoBehaviour
         }
 
         UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
-        if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == true && eye_callback_registered == false)
+        if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback && !_eyeCallbackRegistered)
         {
-            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
-            eye_callback_registered = true;
+            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            _eyeCallbackRegistered = true;
         }
-        else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
+        else if (!SRanipal_Eye_Framework.Instance.EnableEyeDataCallback && _eyeCallbackRegistered)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
-            eye_callback_registered = false;
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            _eyeCallbackRegistered = false;
+        }
+    }
+
+    void Release()
+    {
+        if (_eyeCallbackRegistered)
+        {
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            _eyeCallbackRegistered = false;
         }
     }
 
     /// <summary>
-    /// Check if the system works properly.
+    /// Callback function to record the eye movement data.
+    /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
     /// </summary>
-    void SystemCheck()
+    private static void GetGazeData(ref EyeData_v2 eye_data)
     {
-        if (SRanipal_Eye_API.GetEyeData_v2(ref eyeData) == ViveSR.Error.WORK)
+        EyeParameter eye_parameter = new EyeParameter();
+        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+        _eyeData = eye_data;
+
+        Error error = SRanipal_Eye_API.GetEyeData_v2(ref _eyeData);
+        if (error == ViveSR.Error.WORK)
         {
-            UnityEngine.Debug.Log("Device is working properly.");
+            // gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
+            // gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
+
+            // gaze_direct_L.x = gaze_direct_L.x * -1;
+            // gaze_direct_R.x = gaze_direct_R.x * -1;
+
+            SetGazeVectors(_eyeData.verbose_data.left.gaze_direction_normalized, _eyeData.verbose_data.right.gaze_direction_normalized);
+        }
+    }
+
+    private static void SetGazeVectors(Vector3 gazeL, Vector3 gazeR)
+    {
+        gazeL.x *= -1;
+        gazeR.x *= -1;
+
+        _vecGazeL = gazeL;
+        _vecGazeR = gazeR;
+
+        _bufferGazeL.Add(_vecGazeL);
+        if (_bufferGazeL.Count > BUFFER_CAPACITY)
+        {
+            _bufferGazeL.RemoveAt(0);
         }
 
-        if (SRanipal_Eye_API.GetEyeParameter(ref eye_parameter) == ViveSR.Error.WORK)
+        _bufferGazeR.Add(_vecGazeR);
+        if (_bufferGazeR.Count > BUFFER_CAPACITY)
         {
-            UnityEngine.Debug.Log("Eye parameters are measured.");
+            _bufferGazeR.RemoveAt(0);
         }
-        
-        Error result_eye_init = SRanipal_API.Initial(SRanipal_Eye_v2.ANIPAL_TYPE_EYE_V2, IntPtr.Zero);
+    }
 
-        if (result_eye_init == Error.WORK)
+    private static void SetForwardVector(Vector3 forwardVec)
+    {
+        _vecForward = forwardVec;
+
+        //_bufferForward.Add(_vecGazeR);
+        _bufferForward.Add(_vecForward);
+        if (_bufferForward.Count > BUFFER_CAPACITY)
         {
-            UnityEngine.Debug.Log("[SRanipal] Initial Eye v2: " + result_eye_init);
-        }
-        else
-        {
-            UnityEngine.Debug.LogError("[SRanipal] Initial Eye v2: " + result_eye_init);
-            UnityEditor.EditorApplication.isPlaying = false;
+            _bufferForward.RemoveAt(0);
         }
     }
 
@@ -174,7 +252,7 @@ public class ModelSim : MonoBehaviour
     {
         r = new RawGazeRays();
         
-        SRanipal_Eye_v2.GetGazeRay(GazeIndex.COMBINE, out r.origin, out r.dir, eyeData);
+        SRanipal_Eye_v2.GetGazeRay(GazeIndex.COMBINE, out r.origin, out r.dir, _eyeData);
     }
 
     /// <summary>
@@ -182,103 +260,170 @@ public class ModelSim : MonoBehaviour
     /// </summary>
     public void ContinueClicked()
     {
-        continueClicked = true;
+        _continueClicked = true;
     }
     
     // Update is called once per frame
     void Update()
     {
-        setForwardVector(player.forward);
+        SetForwardVector(_player.forward);
 
-        if (useModel)
+        switch (_modelType)
         {
-            if (is_MLP){
-                ModelCallMLP();
-            }
-            else
-            {
+            case ModelType.BaselineQuadrant:
+                QuadrantBaseline();
+                break;
+            case ModelType.BaselineVector:
+                VectorBaseline();
+                break;
+            case ModelType.LSTM:
                 ModelCallLSTM();
-            }
-        }
-        else if (useQuadrant)
-        {
-            QuadrantBaseline();
-        }
-        else
-        {
-            VectorBaseline();
+                break;
+            case ModelType.MLP:
+                ModelCallMLP();
+                break;
         }
 
-        if (rapidTesting)
-        {
-            RawGazeRays localGazeRays;
-            GetGazeRays(out localGazeRays);
-            RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
+        RawGazeRays localGazeRays;
+        GetGazeRays(out localGazeRays);
+        RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
 
-            Ray gaze = new Ray(gazeRays.origin, gazeRays.dir);
-            RaycastHit hit;
+        Ray gaze = new Ray(gazeRays.origin, gazeRays.dir);
+        RaycastHit hit;
+        if (_testType == TestType.SmoothLinearTest)
+        {
             if (Physics.Raycast(gaze, out hit))
             {
-                
-                if (hit.transform.gameObject.CompareTag("GazeObject1"))
+                bool didHit = hit.transform.gameObject == TrackObjectLine;
+                TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
+            }
+        }
+        else if (_testType == TestType.SmoothArcTest)
+        {
+            if (Physics.Raycast(gaze, out hit))
+            {
+                bool didHit = hit.transform.gameObject == TrackObjectArc;
+                TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit);
+            }
+        }
+        else if (_testType == TestType.RapidMovementTest)
+        {
+            if (Physics.Raycast(gaze, out hit))
+            {
+                GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
+                foreach (GameObject gazeObject in gazeObjects)
                 {
-                    GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
-                    GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
+                    gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(hit.transform.gameObject == gazeObject);
                 }
-                else if (hit.transform.gameObject.CompareTag("GazeObject2"))
+            }
+        }
+
+        if (_firstFrame)
+        {
+            StartCoroutine(Sequence());
+            _firstFrame = false;
+        }
+    }
+
+    /// <summary>
+    /// Rotate the player object by finding vector between current forward direction and eye gaze
+    /// direction. Rotate in direction of this vector.
+    /// </summary>
+    private void VectorBaseline()
+    {
+        // Compute
+
+        float angle_boundary = 5.0f;  //boundary of eye angle
+        float rotate_speed = 4f;  //each rotate angle
+
+        // eye angle in x direction > angle_boundry : rotate the 
+        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
+
+        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
+        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
+        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
+        {
+            _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
+        }
+
+        //var obj_weight = 10 / _player.rotation.z;
+        //if (_player.rotation.z == 0)
+        //{
+        //    obj_weight = 0;
+        //}
+    }
+
+    private void QuadrantBaseline()
+    {
+        float angle_boundary = 5.0f;
+        float rotate_speed = 0.5f;
+
+        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
+
+        Vector3 gaze_direct = (_vecGazeL + _vecGazeR).normalized;
+
+        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
+        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
+
+        //UnityEngine.Debug.Log(global_angle);
+        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
+        {
+            print(gaze_direct_avg_world);
+
+            if (gaze_direct.x < gaze_direct.y)
+            {
+
+                if (gaze_direct.x > -1 * gaze_direct.y)
                 {
-                    GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
-                    GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("GazeObject3"))
-                {
-                    GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
+                    _player.Rotate(-rotate_speed, 0f, 0f);
+                    //player.rotation = Quaternion.Slerp(player.rotation, up, Time.deltaTime*rotate_speed);
                 }
                 else
                 {
-                    GazeObject1.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject2.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject3.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }   
+                    _player.Rotate(0, -rotate_speed, 0f, Space.World);
+                    //player.rotation = Quaternion.Slerp(player.rotation, left, Time.deltaTime*rotate_speed);
+                }
             }
-        }
-
-        if (firstFrame)
-        {
-            StartCoroutine(Sequence());
-            firstFrame = false;
+            else
+            {
+                if (gaze_direct.x > -1 * gaze_direct.y)
+                {
+                    _player.Rotate(0f, rotate_speed, 0f, Space.World);
+                }
+                else
+                {
+                    _player.Rotate(rotate_speed, 0f, 0f);
+                    //player.rotation = Quaternion.Slerp(player.rotation, down, Time.deltaTime*rotate_speed);
+                }
+            }
         }
     }
 
     private static void ModelCallLSTM()
     {
-        for (int i=0; i<3; i++)
+        for (int i = 0; i < 3; i++)
         {
-            input[0, 0, i, 0] = gaze_direct_L[i];
-            input[0, 0, i+3, 0] = gaze_direct_R[i];
-            input[0, 0, i+6, 0] = forward[i];
+            _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
+            _tensorLSTMInput[0, 0, i+3, 0] = _vecGazeR[i];
+            _tensorLSTMInput[0, 0, i+6, 0] = _vecForward[i];
         }
         
-        var Inputs = new Dictionary<string, Tensor>(){
-            {"input", input},
-            {"h0", hn},
-            {"c0", cn}
+        var Inputs = new Dictionary<string, Tensor>() {
+            {"input", _tensorLSTMInput},
+            {"h0", _tensorLSTMHidden},
+            {"c0", _tensorLSTMContext}
         };
 
-        worker.Execute(Inputs);
-        var output = worker.PeekOutput("output");
-        hn = worker.PeekOutput("hn");
-        cn = worker.PeekOutput("cn");
+        _workerLSTM.Execute(Inputs);
+        Tensor output = _workerLSTM.PeekOutput("output");
+        _tensorLSTMHidden = _workerLSTM.PeekOutput("hn");
+        _tensorLSTMContext = _workerLSTM.PeekOutput("cn");
         var new_forward = new Vector3(output[0,0,0,0]-0.05f, output[0,0,0,1], output[0,0,0,2]).normalized;
 
         Quaternion rotation = Quaternion.LookRotation(new_forward);
         if (DisableHeadTracking.Disable)
         {
-            player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime*5.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f);
         }
     }
 
@@ -287,7 +432,7 @@ public class ModelSim : MonoBehaviour
         const int CONTEXT_SIZE = 3;
         const int DATA_PER_TIMESTEP = 9;
 
-        if(gaze_L_buff.Count < CONTEXT_SIZE)
+        if (_bufferGazeL.Count < CONTEXT_SIZE)
         {
             return;
         }
@@ -297,184 +442,77 @@ public class ModelSim : MonoBehaviour
         {
             var ind = c * DATA_PER_TIMESTEP;
 
-            Vector3 l_c = (Vector3)gaze_L_buff[c];
-            Vector3 r_c = (Vector3)gaze_R_buff[c];
-            Vector3 f_c = (Vector3)forward_buff[c];
+            Vector3 l_c = _bufferGazeL[c];
+            Vector3 r_c = _bufferGazeR[c];
+            Vector3 f_c = _bufferForward[c];
 
-            input[0, 0, ind, 0] = l_c.x;
-            input[0, 0, ind + 1, 0] = l_c.y;
-            input[0, 0, ind + 2, 0] = l_c.z;
-            input[0, 0, ind + 3, 0] = r_c.x;
-            input[0, 0, ind + 4, 0] = r_c.y;
-            input[0, 0, ind + 5, 0] = r_c.z;
-            input[0, 0, ind + 6, 0] = f_c.x;
-            input[0, 0, ind + 7, 0] = f_c.y;
-            input[0, 0, ind + 8, 0] = f_c.z;
-           
-
-            /*
-            input[0, 0, ind + 1, 0] = 0;
-            input[0, 0, ind + 2, 0] = 0;
-            input[0, 0, ind + 3, 0] = 0;
-            input[0, 0, ind + 4, 0] = 0;
-            input[0, 0, ind + 5, 0] = 0;
-            input[0, 0, ind + 6, 0] = 0;
-            input[0, 0, ind + 7, 0] = 0;
-            input[0, 0, ind + 8, 0] = 0;
-            */
-
+            _tensorMLPInput[0, 0, ind, 0] = l_c.x;
+            _tensorMLPInput[0, 0, ind + 1, 0] = l_c.y;
+            _tensorMLPInput[0, 0, ind + 2, 0] = l_c.z;
+            _tensorMLPInput[0, 0, ind + 3, 0] = r_c.x;
+            _tensorMLPInput[0, 0, ind + 4, 0] = r_c.y;
+            _tensorMLPInput[0, 0, ind + 5, 0] = r_c.z;
+            _tensorMLPInput[0, 0, ind + 6, 0] = f_c.x;
+            _tensorMLPInput[0, 0, ind + 7, 0] = f_c.y;
+            _tensorMLPInput[0, 0, ind + 8, 0] = f_c.z;
         }
-        
-        var Inputs = new Dictionary<string, Tensor>(){
-            {"onnx::Gemm_0", input},
+
+        //_tensorMLPInput[0, 0, 0, 0] = 0.3640442f;
+        //_tensorMLPInput[0, 0, 1, 0] = 0.2774048f;
+        //_tensorMLPInput[0, 0, 2, 0] = 0.8890991f;
+        //_tensorMLPInput[0, 0, 3, 0] = 0.3574524f;
+        //_tensorMLPInput[0, 0, 4, 0] = 0.2452698f;
+        //_tensorMLPInput[0, 0, 5, 0] = 0.9011383f;
+        //_tensorMLPInput[0, 0, 6, 0] = 0.3591461f;
+        //_tensorMLPInput[0, 0, 7, 0] = 0.2465515f;
+        //_tensorMLPInput[0, 0, 8, 0] = 0.900116f;
+        //_tensorMLPInput[0, 0, 9, 0] = 0.3615723f;
+        //_tensorMLPInput[0, 0, 10, 0] = 0.2754974f;
+        //_tensorMLPInput[0, 0, 11, 0] = 0.8907013f;
+        //_tensorMLPInput[0, 0, 12, 0] = 0.3569946f;
+        //_tensorMLPInput[0, 0, 13, 0] = 0.2446289f;
+        //_tensorMLPInput[0, 0, 14, 0] = 0.9014893f;
+        //_tensorMLPInput[0, 0, 15, 0] = 0.3574524f;
+        //_tensorMLPInput[0, 0, 16, 0] = 0.2452698f;
+        //_tensorMLPInput[0, 0, 17, 0] = 0.9011383f;
+        //_tensorMLPInput[0, 0, 18, 0] = 0.3592377f;
+        //_tensorMLPInput[0, 0, 19, 0] = 0.2737427f;
+        //_tensorMLPInput[0, 0, 20, 0] = 0.8921814f;
+        //_tensorMLPInput[0, 0, 21, 0] = 0.3565521f;
+        //_tensorMLPInput[0, 0, 22, 0] = 0.2440643f;
+        //_tensorMLPInput[0, 0, 23, 0] = 0.901825f;
+        //_tensorMLPInput[0, 0, 24, 0] = 0.3565521f;
+        //_tensorMLPInput[0, 0, 25, 0] = 0.2440643f;
+        //_tensorMLPInput[0, 0, 26, 0] = 0.901825f;
+
+        //string inputLog = "input:";
+        //for (int i = 0; i < CONTEXT_SIZE * DATA_PER_TIMESTEP; i++)
+        //{
+        //    inputLog += " " + _tensorMLPInput[0, 0, i, 0];
+        //}
+        //UnityEngine.Debug.Log(inputLog);
+        var Inputs = new Dictionary<string, Tensor>() {
+            {"onnx::Gemm_0", _tensorMLPInput},
         };
 
-        worker.Execute(Inputs);
-        var output = worker.PeekOutput("11");
+        _workerMLP.Execute(Inputs);
+        string outputLayerName = _modelMLP.outputs[0];
+        Tensor output = _workerMLP.PeekOutput(outputLayerName);
         var forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]);
-        UnityEngine.Debug.Log(forward);
 
         var new_forward = forward.normalized;
 
         Quaternion rotation = Quaternion.LookRotation(new_forward);
         if (DisableHeadTracking.Disable)
         {
-            player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime * 5.0f);
-        }
-    }
-
-
-    /// <summary>
-    /// Rotate the player object by finding vector between current forward direction and eye gaze
-    /// direction. Rotate in direction of this vector.
-    /// </summary>
-    private void VectorBaseline()
-    {
-        //Compute
-
-        float angle_boundary = 5.0f;  //boundary of eye angle
-        float rotate_speed = 4f;  //each rotate angle
-
-        // eye angle in x direction > angle_boundry : rotate the 
-        Vector3 gaze_direct_avg_world = player.rotation * (gaze_direct_L + gaze_direct_R).normalized;
-
-        var angle = Vector3.Angle(gaze_direct_avg_world, forward);
-        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
-        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
-        {
-            player.rotation = Quaternion.Slerp(player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime*rotate_speed);
-        }
-        
-        var obj_weight = 10/ player.rotation.z;
-        if(player.rotation.z == 0) obj_weight = 0;
-    }
-
-    private void QuadrantBaseline()
-    {        
-        float angle_boundary = 5.0f;
-        float rotate_speed = 0.5f;
-
-        Vector3 gaze_direct_avg_world = player.rotation * (gaze_direct_L + gaze_direct_R).normalized;
-
-        Vector3 gaze_direct =  (gaze_direct_L + gaze_direct_R).normalized;
-
-        var angle = Vector3.Angle(gaze_direct_avg_world, forward);
-        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
-        
-        //UnityEngine.Debug.Log(global_angle);
-        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
-        {
-            print(gaze_direct_avg_world);
-            
-            if ( gaze_direct.x <  gaze_direct.y)
-            {
-                
-                if (gaze_direct.x > -1 * gaze_direct.y)
-                {
-                    player.Rotate(-rotate_speed, 0f, 0f);
-                    //player.rotation = Quaternion.Slerp(player.rotation, up, Time.deltaTime*rotate_speed);
-                }
-                else
-                {
-                    player.Rotate(0, -rotate_speed, 0f, Space.World);
-                    //player.rotation = Quaternion.Slerp(player.rotation, left, Time.deltaTime*rotate_speed);
-                }
-            }
-            else
-            {
-                if ( gaze_direct.x > -1 *  gaze_direct.y)
-                {
-                    player.Rotate(0f, rotate_speed, 0f, Space.World);
-                }
-                else
-                {
-                    player.Rotate(rotate_speed, 0f, 0f);
-                    //player.rotation = Quaternion.Slerp(player.rotation, down, Time.deltaTime*rotate_speed);
-                }
-            }
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 75.0f);
         }
     }
 
     private void ResetHead()
     {
-        player.rotation = Quaternion.LookRotation(new Vector3(0,0,1));
+        _player.rotation = Quaternion.LookRotation(new Vector3(0, 0, 1));
     }
-
-    /// <summary>
-    /// Callback function to record the eye movement data.
-    /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
-    /// </summary>
-    private static void GetData(ref EyeData_v2 eye_data)
-    {
-        EyeParameter eye_parameter = new EyeParameter();
-        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
-        eyeData = eye_data;
-
-        Error error = SRanipal_Eye_API.GetEyeData_v2(ref eyeData);
-        if (error == ViveSR.Error.WORK)
-        {
-            // gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
-            // gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
-
-            // gaze_direct_L.x = gaze_direct_L.x * -1;
-            // gaze_direct_R.x = gaze_direct_R.x * -1;
-
-            setGazeVectors(eyeData.verbose_data.left.gaze_direction_normalized, eyeData.verbose_data.right.gaze_direction_normalized);
-        }
-    }
-
-    private static void setGazeVectors(Vector3 gazeL, Vector3 gazeR)
-    {
-        gazeL.x *= -1;
-        gazeR.x *= -1;
-
-        gaze_direct_L = gazeL;
-        gaze_direct_R = gazeR;
-
-        gaze_R_buff.Add(gaze_direct_R);
-        if(gaze_R_buff.Count > BUFFER_CAPACITY)
-        {
-            gaze_R_buff.RemoveAt(0);
-        }
-
-        gaze_L_buff.Add(gaze_direct_L);
-        if (gaze_L_buff.Count > BUFFER_CAPACITY)
-        {
-            gaze_L_buff.RemoveAt(0);
-        }
-    }
-
-    private static void setForwardVector(Vector3 forwardVec)
-    {
-        forward = forwardVec;
-
-        forward_buff.Add(gaze_direct_R);
-        if (forward_buff.Count > BUFFER_CAPACITY)
-        {
-            forward_buff.RemoveAt(0);
-        }
-    }
-
 
     /// <summary>
     /// Saccade task sequence.
@@ -484,7 +522,7 @@ public class ModelSim : MonoBehaviour
         UnityEngine.Debug.Log("Sequence started");
         // DO NOT REMOVE THE PRIVACY STATEMENT, REQUIRED BY HTC 
         // Participants should see the paper version during the consent process https://docs.google.com/document/d/13ehQgG4bj30qM26owmaHe9gsbGhAz9uMMaSYZKIm2cA/edit?usp=sharing
-        breakMessage.text =
+        BreakMessage.text =
             "Welcome to the virtual environment. The following is a version of the privacy statement you should have already seen during the consent process." +
             "\nIf you have not seen this do not continue until the staff provide you with a physical copy of this and have explained it and answered any questions to your satifaction." +
             "\n\n Privacy Statement: While using this virtual environment, data about your facial expressions will be saved." +
@@ -500,28 +538,14 @@ public class ModelSim : MonoBehaviour
             "\n\nPress continue if you agree with the privacy statement and are ready to begin.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        breakMessage.text =
-            "For the Rapid Movement section of the test, 3 cubes wil spawn in\n" +
-            "various locations in front of you and begin to move towards you.\n" +
-            "Look at the cubes to reset them before they reach you.\n" +
-            "\n" +
-            "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
-            "Press continue when you are ready to begin.";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-        yield return StartCoroutine(RapidMovementTest());
-        
-        breakMessage.text =
-            "Rapid Movement Test Complete!\n" +
-            "\n" +
+        BreakMessage.text =
             "When you are ready to begin the Linear Pursuit section of the test, press continue.";
         yield return StartCoroutine(DisplayBreakMenu());
 
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
 
-        breakMessage.text =
+        BreakMessage.text =
             "Linear Pursuit Test Complete!\n" +
             "\n" +
             "When you are ready to begin the Arc Pursuit section of the test, press continue.";
@@ -530,7 +554,21 @@ public class ModelSim : MonoBehaviour
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        breakMessage.text =
+        BreakMessage.text =
+            "Arc Pursuit Test Complete!\n" +
+            "\n" +
+            "For the Rapid Movement section of the test, 3 cubes will spawn in\n" +
+            "various locations in front of you and will begin to move towards you.\n" +
+            "Look at the cubes to reset them before they reach you.\n" +
+            "\n" +
+            "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
+            "Press continue when you are ready to begin.";
+        yield return StartCoroutine(DisplayBreakMenu());
+
+        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+        yield return StartCoroutine(RapidMovementTest());
+
+        BreakMessage.text =
             "All Tests Complete! Thank you!";
         yield return StartCoroutine(DisplayBreakMenu());
     }
@@ -541,18 +579,18 @@ public class ModelSim : MonoBehaviour
     /// </summary>
     private IEnumerator DisplayBreakMenu()
     {
-        continueClicked = false;
+        _continueClicked = false;
         BreakCanvas.enabled = true;
         BreakCanvas.gameObject.SetActive(true);
 
-        while (!continueClicked)
+        while (!_continueClicked)
         {
             yield return null;
         }
 
         BreakCanvas.enabled = false;
         BreakCanvas.gameObject.SetActive(false);
-        continueClicked = false;
+        _continueClicked = false;
     }
 
     /// <summary>
@@ -565,49 +603,27 @@ public class ModelSim : MonoBehaviour
         CountdownCanvas.gameObject.SetActive(true);
         for (int i = duration; i > 0; i--)
         {
-            countdownMessage.text = message + i.ToString();
+            CountdownMessage.text = message + i.ToString();
             yield return new WaitForSeconds(1);
         }
 
-        countdownMessage.text = "";
+        CountdownMessage.text = "";
         CountdownCanvas.gameObject.SetActive(false);
-    }
-
-    private IEnumerator RapidMovementTest()
-    {
-        GazeObject1.SetActive(true);
-        GazeObject2.SetActive(true);
-        GazeObject3.SetActive(true);
-        rapidTesting = true;
-        DisableHeadTracking.Disable = true;
-        ResetModel();
-        Invoke("Measurement", 0f);
-        gameTime = Time.time;
-        while (Time.time - gameTime < SECONDS_PER_TRIAL)
-        {
-            //StartCoroutine(UpdateGazeObjects());
-            yield return null;
-        }
-        rapidTesting = false;
-        DisableHeadTracking.Disable = false;
-        GazeObject1.SetActive(false);
-        GazeObject2.SetActive(false);
-        GazeObject3.SetActive(false);
-        ResetHead();
-        Release();
     }
 
     private IEnumerator LinearPursuit()
     {
         TrackObjectLine.SetActive(true);
+        _testType = TestType.SmoothLinearTest;
         DisableHeadTracking.Disable = true;
         ResetModel();
-        Invoke("Measurement", 0f);
-        gameTime = Time.time;
-        while (Time.time - gameTime < SECONDS_PER_TRIAL)
+        Invoke(nameof(Measurement), 0f);
+        _gameTime = Time.time;
+        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
         {
             yield return null;
         }
+        _testType = TestType.None;
         DisableHeadTracking.Disable = false;
         TrackObjectLine.SetActive(false);
         ResetHead();
@@ -617,45 +633,66 @@ public class ModelSim : MonoBehaviour
     private IEnumerator ArcPursuit()
     {
         TrackObjectArc.SetActive(true);
+        _testType = TestType.SmoothArcTest;
         DisableHeadTracking.Disable = true;
         ResetModel();
-        Invoke("Measurement", 0f);
-        gameTime = Time.time;
-        while (Time.time - gameTime < SECONDS_PER_TRIAL)
+        Invoke(nameof(Measurement), 0f);
+        _gameTime = Time.time;
+        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
         {
             yield return null;
         }
+        _testType = TestType.None;
         DisableHeadTracking.Disable = false;
         TrackObjectArc.SetActive(false);
         ResetHead();
         Release();
     }
 
-    private void ResetModel()
+    private IEnumerator RapidMovementTest()
     {
-        worker = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, m_RuntimeModel);
-        hn = new Tensor(1, 1, 9, 1);
-        cn = new Tensor(1, 1, 9, 1);
-        if (is_MLP)
+        GazeObject1.SetActive(true);
+        GazeObject2.SetActive(true);
+        GazeObject3.SetActive(true);
+        _testType = TestType.RapidMovementTest;
+        DisableHeadTracking.Disable = true;
+        ResetModel();
+        Invoke(nameof(Measurement), 0f);
+        _gameTime = Time.time;
+        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
         {
-            input = new Tensor(1, 1, 27, 1);
+            //StartCoroutine(UpdateGazeObjects());
+            yield return null;
         }
-        else { input = new Tensor(1, 1, 9, 1); }
-        for (int i = 0; i < 9; i++)
-        {
-            hn[0, 0, i, 0] = 0;
-            cn[0, 0, i, 0] = 0;
-        }
-        first_output = true;
-        frame = 0;
+        _testType = TestType.None;
+        DisableHeadTracking.Disable = false;
+        GazeObject1.SetActive(false);
+        GazeObject2.SetActive(false);
+        GazeObject3.SetActive(false);
+        ResetHead();
+        Release();
     }
 
-    void Release()
+    private void ResetModel()
     {
-        if (eye_callback_registered)
+        _tensorLSTMHidden.Dispose();
+        _tensorLSTMContext.Dispose();
+        _tensorLSTMInput.Dispose();
+        _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
+        _tensorLSTMHidden = new Tensor(1, 1, 9, 1);
+        _tensorLSTMContext = new Tensor(1, 1, 9, 1);
+        _tensorLSTMInput = new Tensor(1, 1, 9, 1);
+        for (int i = 0; i < 9; i++)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetData));
-            eye_callback_registered = false;
+            _tensorLSTMHidden[0, 0, i, 0] = 0;
+            _tensorLSTMContext[0, 0, i, 0] = 0;
         }
+
+        _tensorMLPInput.Dispose();
+        _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
+        _tensorMLPInput = new Tensor(1, 1, 27, 1);
+
+        //first_output = true;
+        _frame = 0;
     }
 }

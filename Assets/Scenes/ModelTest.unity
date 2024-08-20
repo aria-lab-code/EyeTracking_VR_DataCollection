@@ -178,7 +178,8 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 114000010547881750, guid: dc06161b6d97feb419f45f03b62e14b9, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: dc06161b6d97feb419f45f03b62e14b9, type: 3}
 --- !u!1 &220554465
 GameObject:
@@ -224,9 +225,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 220554465}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: be8ae8d3a4961ee448341a6d5c1f92eb, type: 3}
+  m_Script: {fileID: 11500000, guid: 7027d4a98157d85479c90baea697bc81, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  highlightColor: {r: 0, g: 1, b: 0, a: 1}
+  animationTime: 0.1
+  _otherObject: []
+  speed: 2
 --- !u!23 &220554468
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -247,7 +252,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1301,8 +1306,7 @@ GameObject:
   - component: {fileID: 1210311870}
   - component: {fileID: 1210311869}
   - component: {fileID: 1210311868}
-  - component: {fileID: 1210311867}
-  - component: {fileID: 1210311871}
+  - component: {fileID: 1210311872}
   m_Layer: 0
   m_Name: Tracking Object 1
   m_TagString: GazeObject1
@@ -1325,18 +1329,6 @@ Transform:
   m_Father: {fileID: 363545033}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1210311867
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1210311865}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8ff66d6ba5132c042bd1d7733beeac1f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!23 &1210311868
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1357,7 +1349,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1400,7 +1392,7 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1210311865}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &1210311871
+--- !u!114 &1210311872
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1409,13 +1401,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 1210311865}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7027d4a98157d85479c90baea697bc81, type: 3}
+  m_Script: {fileID: 11500000, guid: a3bd981851c072e4789d43bd56b2cc9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   highlightColor: {r: 0, g: 1, b: 0, a: 1}
-  animationTime: 0.1
-  _otherObject: []
-  speed: 2
 --- !u!1 &1226335106
 GameObject:
   m_ObjectHideFlags: 0
@@ -1689,8 +1678,7 @@ GameObject:
   - component: {fileID: 1515476049}
   - component: {fileID: 1515476048}
   - component: {fileID: 1515476047}
-  - component: {fileID: 1515476046}
-  - component: {fileID: 1515476050}
+  - component: {fileID: 1515476051}
   m_Layer: 0
   m_Name: Tracking Object 2
   m_TagString: GazeObject1
@@ -1713,18 +1701,6 @@ Transform:
   m_Father: {fileID: 363545033}
   m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1515476046
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1515476044}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a55742514556f6b4d8553c40a702e687, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!23 &1515476047
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1745,7 +1721,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1788,7 +1764,7 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1515476044}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &1515476050
+--- !u!114 &1515476051
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1797,13 +1773,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 1515476044}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7027d4a98157d85479c90baea697bc81, type: 3}
+  m_Script: {fileID: 11500000, guid: 509b9c402f0d8bc4792ce4930d8c8cae, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   highlightColor: {r: 0, g: 1, b: 0, a: 1}
-  animationTime: 0.1
-  _otherObject: []
-  speed: 2
 --- !u!1 &1517572048
 GameObject:
   m_ObjectHideFlags: 0
@@ -1848,9 +1821,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 1517572048}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: be8ae8d3a4961ee448341a6d5c1f92eb, type: 3}
+  m_Script: {fileID: 11500000, guid: 7027d4a98157d85479c90baea697bc81, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  highlightColor: {r: 0, g: 1, b: 0, a: 1}
+  animationTime: 0.1
+  _otherObject: []
+  speed: 2
 --- !u!23 &1517572051
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -1871,7 +1848,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2088,9 +2065,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 1974183980}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: be8ae8d3a4961ee448341a6d5c1f92eb, type: 3}
+  m_Script: {fileID: 11500000, guid: 7027d4a98157d85479c90baea697bc81, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  highlightColor: {r: 0, g: 1, b: 0, a: 1}
+  animationTime: 0.1
+  _otherObject: []
+  speed: 2
 --- !u!23 &1974183983
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -2111,7 +2092,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2211,17 +2192,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4937e31b6ccd7b44694b1e647be389ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  modelAsset: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
-  use_model: 0
-  use_quadrant: 0
+  ModelAssetLSTM: {fileID: 5022602860645237092, guid: a78d46cb092240240beb9f3fc2bb4ba6, type: 3}
+  ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
   GazeObject1: {fileID: 1517572048}
   GazeObject2: {fileID: 220554465}
   GazeObject3: {fileID: 1974183980}
   TrackObjectLine: {fileID: 1210311865}
   TrackObjectArc: {fileID: 1515476044}
-  is_MLP: 1
-  breakMessage: {fileID: 1083708609}
-  countdownMessage: {fileID: 576849366}
   BreakCanvas: {fileID: 667567739}
   CountdownCanvas: {fileID: 1226335111}
-  calibrate: 1
+  BreakMessage: {fileID: 1083708609}
+  CountdownMessage: {fileID: 576849366}
+  Calibrate: 0

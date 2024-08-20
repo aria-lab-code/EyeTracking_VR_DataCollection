@@ -109,14 +109,12 @@ public class GazeCollection2 : MonoBehaviour
     /// </summary>
     void Start()
     {
-        
         Path = Directory.GetCurrentDirectory();
         File_Path = Path + "\\userIDList.txt";
 
         using (StreamReader sr = new StreamReader(File_Path))
         {
             UserID = sr.ReadLine().Trim();
- 
         }
         trailNum = 0;
         UserIDNum = UserID;

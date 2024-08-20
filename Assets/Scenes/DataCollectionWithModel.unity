@@ -468,7 +468,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 1380064163}
         m_TargetAssemblyTypeName: GazeCollectionWithModel, Assembly-CSharp
-        m_MethodName: ContinueClicked2
+        m_MethodName: ContinueClicked
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -2056,16 +2056,8 @@ MonoBehaviour:
   - {fileID: 973910918}
   - {fileID: 417664185}
   - {fileID: 1932525399}
-  - {fileID: 1979999772}
-  - {fileID: 2027327439}
-  - {fileID: 1991213531}
-  - {fileID: 484342444}
-  - {fileID: 1625682868}
-  - {fileID: 1793274027}
-  - {fileID: 1481990410}
-  - {fileID: 652691117}
-  calibrationButton: {fileID: 2083122465}
   continueButton: {fileID: 312617100}
+  calibrationButton: {fileID: 2083122465}
   hands:
   - {fileID: 1969722437}
   calibrated: 1

@@ -3,10 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
 public class SmoothPursuitLinear : MonoBehaviour
 {
-
     private float x;
     private float y;
     private float max;
@@ -25,6 +23,7 @@ public class SmoothPursuitLinear : MonoBehaviour
     private bool focused;
     // Start is called before the first frame update
     private GazeCollection2 mainScript;
+
     void OnEnable()
     {
         speed = 5;
@@ -36,12 +35,11 @@ public class SmoothPursuitLinear : MonoBehaviour
         y = UnityEngine.Random.Range(-max, max);
 
         UnityEngine.Debug.Log($"{x},{y}");
-        nextPos = new Vector3(x,y,10);
+        nextPos = new Vector3(x, y, 10);
 
         atNextPos = false;
         init = false;
     }
-    
 
     void ColorUpdate()
     {
@@ -75,12 +73,10 @@ public class SmoothPursuitLinear : MonoBehaviour
         }
         
         ColorUpdate();
-
     }
 
     public void GazeFocusChanged(bool hasFocus)
     {
-
         //If this object received focus, fade the object's color to highlight color
         if (hasFocus)
         {
@@ -93,6 +89,7 @@ public class SmoothPursuitLinear : MonoBehaviour
         }
         checkFocus(hasFocus);
     }
+
     private void checkFocus(bool newFocus)
     {
         if (newFocus != focused)

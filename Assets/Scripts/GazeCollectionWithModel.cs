@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Runtime.InteropServices;
+using Unity.Barracuda;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.IO;
@@ -12,7 +13,6 @@ using Valve.VR.InteractionSystem;
 using System.Diagnostics;
 using System.Collections.Generic;
 using TMPro;
-using System.Linq;
 
 public class GazeCollectionWithModel : MonoBehaviour
 {
@@ -32,13 +32,13 @@ public class GazeCollectionWithModel : MonoBehaviour
     #region "GUI interactions"
     public TextMesh breakMessage2, countdownMessage2;
     public Canvas BreakCanvas2, CountdownCanvas2;
-    private static GameObject GazeObject1, GazeObject2, GazeObject3, TrackObjectLine, TrackObjectArc;
-    private static GameObject GazeObject4, GazeObject5, GazeObject6, AvoidObject1, AvoidObject2, AvoidObject3;
-    private bool continueClicked;
-    private bool calibrationClicked;
+    private static GameObject TrackObjectLine; // Linear Pursuit.
+    private static GameObject TrackObjectArc; // Arc Pursuit.
+    private static GameObject GazeObject1, GazeObject2, GazeObject3; // Rapid Movement.
+    private static GameObject GazeObject4, GazeObject5, GazeObject6, AvoidObject1, AvoidObject2, AvoidObject3; // Rapid Avoid.
     public List<GameObject> GazeObjs;
-    public Button calibrationButton;
     public Button continueButton;
+    public Button calibrationButton;
     //public TextMesh infoMessage;
     public List<GameObject> hands;
     #endregion
@@ -65,8 +65,11 @@ public class GazeCollectionWithModel : MonoBehaviour
     private static Vector3 forward;
     #endregion
 
-    public static int score = 0;
-    public static int total_score = 0;
+    private bool continueClicked;
+    private bool calibrationClicked;
+
+    public static int score = 0; // Updated by `HighlightAtGaze` statically.
+    public static int total_score = 0; // ""
     private readonly Dictionary<string, int> score_record = new Dictionary<string, int>();
 
     /// <summary>
@@ -87,19 +90,10 @@ public class GazeCollectionWithModel : MonoBehaviour
     [Header("RayCastSetting")]
     public LayerMask RayCastLayers;
 
-    public static void RemoveFirstLine(string path)
-    {
-        List<string> quotelist = File.ReadAllLines(path).ToList();
-        quotelist.RemoveAt(0);
-        using (StreamWriter sw = new StreamWriter(path, false))
-        {
-            foreach (string s in quotelist)
-            {
-                sw.WriteLine(s);
-            }
-        }
-        //File.WriteAllLines(path, quotelist.ToArray());
-    }
+    public NNModel ModelNNAsset;
+    private Model ModelNN;
+    public NNModel ModelLSTMAsset;
+    private Model ModelLSTM;
 
     /// <summary>
     /// Start is called before the first frame update. The Start() function is performed only one time.
@@ -109,25 +103,24 @@ public class GazeCollectionWithModel : MonoBehaviour
         Path = Directory.GetCurrentDirectory();
         File_Path = Path + "\\userIDListWithModel.txt";
 
-        using (StreamReader sr = new StreamReader(File_Path))
-        {
-            UserID = sr.ReadLine().Trim();
-        }
-        trialNum = 0;
+        UserID = FileUtils.RemoveFirstLine(File_Path);
         UserIDNum = UserID;
-        RemoveFirstLine(File_Path);
+
+        ModelNN = ModelLoader.Load(ModelNNAsset);
+        ModelLSTM = ModelLoader.Load(ModelLSTMAsset);
 
         timer.Start();
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
         Testing = TestType.None;
         frame = 0;
+        trialNum = 0;
+        firstFrame = true;
 
         continueClicked = false;
         calibrationClicked = false;
         forward = Camera.main.transform.forward;
 
-        Invoke("SystemCheck", 0.5f);                // System check.
-
+        Invoke(nameof(SystemCheck), 0.5f);                // System check.
 
         //calibrated = false; // Should be False at Test Time
         while (!calibrated)
@@ -135,141 +128,89 @@ public class GazeCollectionWithModel : MonoBehaviour
             calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();     // Perform calibration for eye tracking.
         }
 
-        firstFrame = true;
+        // Linear Pursuit.
+        TrackObjectLine = GameObject.Find("Tracking Object 1");
+        TrackObjectLine.SetActive(false);
+        // Arc Pursuit.
+        TrackObjectArc = GameObject.Find("Tracking Object 2");
+        TrackObjectArc.SetActive(false);
+        // Rapid Movement.
         GazeObject1 = GameObject.Find("Gaze Focusable Object 1");
         GazeObject2 = GameObject.Find("Gaze Focusable Object 2");
         GazeObject3 = GameObject.Find("Gaze Focusable Object 3");
-
-        TrackObjectLine = GameObject.Find("Tracking Object 1");
-        TrackObjectArc = GameObject.Find("Tracking Object 2");
-
+        GazeObject1.SetActive(false);
+        GazeObject2.SetActive(false);
+        GazeObject3.SetActive(false);
+        // Rapid Avoid.
         GazeObject4 = GameObject.Find("Gaze Focusable Object4");
         GazeObject5 = GameObject.Find("Gaze Focusable Object5");
         GazeObject6 = GameObject.Find("Gaze Focusable Object6");
         AvoidObject1 = GameObject.Find("Gaze Avoid Object1");
         AvoidObject2 = GameObject.Find("Gaze Avoid Object2");
         AvoidObject3 = GameObject.Find("Gaze Avoid Object3");
-
-        GazeObject1.SetActive(false);
-        GazeObject2.SetActive(false);
-        GazeObject3.SetActive(false);
-
-        TrackObjectLine.SetActive(false);
-        TrackObjectArc.SetActive(false);
-
         GazeObject4.SetActive(false);
         GazeObject5.SetActive(false);
         GazeObject6.SetActive(false);
         AvoidObject1.SetActive(false);
         AvoidObject2.SetActive(false);
         AvoidObject3.SetActive(false);
-
-
-    }
-
-    void RapidMovementObjectData_txt()
-    {
-        string variable =
-        "time(100ns)" + "," +
-        "time_stamp(ms)" + "," +
-        "object1.x" + "," +
-        "object1.y" + "," +
-        "object1.z" + "," +
-        "object2.x" + "," +
-        "object2.y" + "," +
-        "object2.z" + "," +
-        "object3.x" + "," +
-        "object3.y" + "," +
-        "object3.z" + "," +
-        Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum}.txt", variable);
     }
 
     void LinearPursuitObjectData_txt()
     {
-        string variable =
-        "time(100ns)" + "," +
-        "time_stamp(ms)" + "," +
-        "object1.x" + "," +
-        "object1.y" + "," +
-        "object1.z" + "," +
-        Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", variable);
+        string header = "time(100ns),time_stamp(ms),object1.x,object1.y,object1.z" + Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", header);
     }
 
     void ArcPursuitObjectData_txt()
     {
-        string variable =
-        "time(100ns)" + "," +
-        "time_stamp(ms)" + "," +
-        "object1.x" + "," +
-        "object1.y" + "," +
-        "object1.z" + "," +
-        Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", variable);
+        string header = "time(100ns),time_stamp(ms),object1.x,object1.y,object1.z" + Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", header);
+    }
+
+    void RapidMovementObjectData_txt()
+    {
+        string header = "time(100ns),time_stamp(ms)" +
+            ",object1.x,object1.y,object1.z" +
+            ",object2.x,object2.y,object2.z" +
+            ",object3.x,object3.y,object3.z" + Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum}.txt", header);
     }
 
     void AvoidMovementObjectData_txt()
     {
-        string variable =
-        "time(100ns)" + "," +
-        "time_stamp(ms)" + "," +
-        "object1.x" + "," +
-        "object1.y" + "," +
-        "object1.z" + "," +
-        "object2.x" + "," +
-        "object2.y" + "," +
-        "object2.z" + "," +
-        "object3.x" + "," +
-        "object3.y" + "," +
-        "object3.z" + "," +
-        "AvoidObject1.x" + "," +
-        "AvoidObject1.y" + "," +
-        "AvoidObject1.z" + "," +
-        "AvoidObject2.x" + "," +
-        "AvoidObject2.y" + "," +
-        "AvoidObject2.z" + "," +
-        "AvoidObject3.x" + "," +
-        "AvoidObject3.y" + "," +
-        "AvoidObject3.z" + "," +
-        Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", variable);
+        string header = "time(100ns),time_stamp(ms)" +
+            ",object1.x,object1.y,object1.z" +
+            ",object2.x,object2.y,object2.z" +
+            ",object3.x,object3.y,object3.z" +
+            ",AvoidObject1.x,AvoidObject1.y,AvoidObject1.z" +
+            ",AvoidObject2.x,AvoidObject2.y,AvoidObject2.z" +
+            ",AvoidObject3.x,AvoidObject3.y,AvoidObject3.z" + Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", header);
     }
 
     void Data_txt()
     {
-        string variable =
-        "time(100ns)" + "," +
-        "time_stamp(ms)" + "," +
-        "frame" + "," +
-        "gaze_direct_L.x" + "," +
-        "gaze_direct_L.y" + "," +
-        "gaze_direct_L.z" + "," +
-        "gaze_direct_R.x" + "," +
-        "gaze_direct_R.y" + "," +
-        "gaze_direct_R.z" + "," +
-        "forward.x" + "," +
-        "forward.y" + "," +
-        "forward.z" + "," +
-        Environment.NewLine;
-
-        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", variable);
+        string header = "time(100ns),time_stamp(ms),frame" +
+            ",gaze_direct_L.x,gaze_direct_L.y,gaze_direct_L.z" +
+            ",gaze_direct_R.x,gaze_direct_R.y,gaze_direct_R.z" +
+            ",forward.x,forward.y,forward.z" + Environment.NewLine;
+        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", header);
     }
 
     void Record_txt()
     {
         if (!File.Exists(Record_name))
         {
-            string variable =
-                "time(100ns)" + "," +
-                "User_ID" + ",";
+            string header = "time(100ns),User_ID";
             foreach (string key in score_record.Keys)
             {
-                variable += key + ",";
+                header += "," + key;
             }
-            variable = variable.TrimEnd(',') + Environment.NewLine;
-            File.AppendAllText(Record_name, variable);
+            header += Environment.NewLine;
+            File.AppendAllText(Record_name, header);
         }
+
         MeasureTime = DateTime.Now.Ticks;
         string value =
             MeasureTime.ToString() + "," +
@@ -295,6 +236,7 @@ public class GazeCollectionWithModel : MonoBehaviour
             return;
         }
 
+        // https://gist.github.com/qxxxb/d1357828c16d27873751280d7222ea25
         UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
         if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == true && eye_callback_registered == false)
         {
@@ -348,7 +290,7 @@ public class GazeCollectionWithModel : MonoBehaviour
     /// <summary>
     /// Changes the flag to indicate that one of the menu continue buttons has been clicked.
     /// </summary>
-    public void ContinueClicked2()
+    public void ContinueClicked()
     {
         continueClicked = true;
     }
@@ -372,9 +314,9 @@ public class GazeCollectionWithModel : MonoBehaviour
         }
     }
 
-    void GetGazeRays(out RawGazeRays r, GazeIndex gazeIndex)
+    RawGazeRays GetGazeRays(GazeIndex gazeIndex)
     {
-        r = new RawGazeRays();
+        RawGazeRays r = new RawGazeRays();
         if (eye_callback_registered)
         {
             SRanipal_Eye_v2.GetGazeRay(gazeIndex, out r.origin, out r.dir, eyeData);
@@ -383,6 +325,7 @@ public class GazeCollectionWithModel : MonoBehaviour
         {
             SRanipal_Eye_v2.GetGazeRay(gazeIndex, out r.origin, out r.dir);
         }
+        return r;
     }
 
     /// <summary>
@@ -394,34 +337,18 @@ public class GazeCollectionWithModel : MonoBehaviour
         frame++;
         localToWorldTransform = Camera.main.transform.localToWorldMatrix;
         forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1));
-        RawGazeRays localGazeRays;
-        GetGazeRays(out localGazeRays, GazeIndex.COMBINE);
+        RawGazeRays localGazeRays = GetGazeRays(GazeIndex.COMBINE);
         RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
 
         Ray gaze = new Ray(gazeRays.origin, gazeRays.dir);
         RaycastHit hit;
 
-        if (Testing == TestType.RapidMovementTest)
-        {
-            if (!BreakCanvas2.enabled)
-            {
-                RapidMovementObjectCallback();
-            }
-            if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
-            {
-                foreach (var obj in GazeObjs)
-                {
-                    obj.GetComponent<HighlightAtGaze>().GazeFocusChanged(obj == hit.transform.gameObject);
-                    // TODO: Increment score here instead of from `HighlightAtGaze`.
-                }
-            }
-        }
-        else if (Testing == TestType.SmoothLinearTest)
+        if (Testing == TestType.SmoothLinearTest)
         {
             total_score++;
             if (!BreakCanvas2.enabled)
             {
-                LinearPursuitObjectCallback();
+                UpdateObjectLinearPursuit();
             }
             if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
             {
@@ -443,7 +370,10 @@ public class GazeCollectionWithModel : MonoBehaviour
         else if (Testing == TestType.SmoothArcTest)
         {
             total_score++;
-            ArcPursuitObjectCallback();
+            if (!BreakCanvas2.enabled)
+            {
+                UpdateObjectArcPursuit();
+            }
             if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
             {
                 if (hit.transform.gameObject.CompareTag("GazeObject1"))
@@ -461,79 +391,48 @@ public class GazeCollectionWithModel : MonoBehaviour
                 TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(false);
             }
         }
+        else if (Testing == TestType.RapidMovementTest)
+        {
+            if (!BreakCanvas2.enabled)
+            {
+                UpdateObjectRapidMovement();
+            }
+
+            if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
+            {
+                foreach (var obj in GazeObjs)
+                {
+                    obj.GetComponent<HighlightAtGaze>().GazeFocusChanged(obj == hit.transform.gameObject);
+                    // TODO: Increment score here instead of from `HighlightAtGaze`.
+                }
+            }
+        }
         else if (Testing == TestType.RapidAvoidTest)
         {
             if (!BreakCanvas2.enabled)
             {
-                AvoidMovementObjectCallback();
+                UpdateObjectAvoidMovement();
             }
+
             if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
             {
-                if (hit.transform.gameObject.CompareTag("AvoidObject1"))
+                string[] tags = { "AvoidObject1", "AvoidObject2", "AvoidObject3", "GazeObject4", "GazeObject5", "GazeObject6" };
+                GameObject[] gameObjects = { AvoidObject1, AvoidObject2, AvoidObject3, GazeObject4, GazeObject5, GazeObject6 };
+                for (int i = 0; i < tags.Length; i++)
                 {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(true);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("AvoidObject2"))
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(true);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("AvoidObject3"))
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(true);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("GazeObject4"))
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("GazeObject5"))
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                }
-                else if (hit.transform.gameObject.CompareTag("GazeObject6"))
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(true);
-                }
-                else
-                {
-                    AvoidObject1.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject2.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    AvoidObject3.GetComponent<AvoidObstacleTest>().GazeFocusChanged(false);
-                    GazeObject4.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject5.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
-                    GazeObject6.GetComponent<HighlightAtGaze>().GazeFocusChanged(false);
+                    bool tagged = hit.transform.gameObject.CompareTag(tags[i]);
+                    if (i < 3)
+                    {
+                        gameObjects[i].GetComponent<AvoidObstacleTest>().GazeFocusChanged(tagged);
+                    }
+                    else
+                    {
+                        gameObjects[i].GetComponent<HighlightAtGaze>().GazeFocusChanged(tagged);
+                    }
                 }
             }
         }
+
         if (firstFrame)
         {
             StartCoroutine(Sequence());
@@ -541,12 +440,52 @@ public class GazeCollectionWithModel : MonoBehaviour
         }
     }
 
-    #region Callback
+    #region Update
     /// <summary>
-    /// The Callback functions is to record the data(gaze/forward data, object data) to the txt file.
+    /// The Update functions are to record the data (gaze/forward data, object data) to the txt file.
     /// </summary>
 
-    void RapidMovementObjectCallback()
+    void UpdateObjectLinearPursuit()
+    {
+        MeasureTime = DateTime.Now.Ticks;
+        timeSpan = timer.ElapsedMilliseconds;
+        time_stamp = eyeData.timestamp;
+        string[] obj1Position = {
+            TrackObjectLine.transform.position.x.ToString(),
+            TrackObjectLine.transform.position.y.ToString(),
+            TrackObjectLine.transform.position.z.ToString()
+        };
+        string value =
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", value);
+    }
+
+    void UpdateObjectArcPursuit()
+    {
+        MeasureTime = DateTime.Now.Ticks;
+        timeSpan = timer.ElapsedMilliseconds;
+        time_stamp = eyeData.timestamp;
+        string[] obj1Position = {
+            TrackObjectArc.transform.position.x.ToString(),
+            TrackObjectArc.transform.position.y.ToString(),
+            TrackObjectArc.transform.position.z.ToString()
+        };
+        string value =
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", value);
+    }
+
+    void UpdateObjectRapidMovement()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
@@ -582,25 +521,25 @@ public class GazeCollectionWithModel : MonoBehaviour
         File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum}.txt", value);
     }
 
-    void AvoidMovementObjectCallback()
+    void UpdateObjectAvoidMovement()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
         string[] obj1Position = {
-            GazeObject1.transform.position.x.ToString(),
-            GazeObject1.transform.position.y.ToString(),
-            GazeObject1.transform.position.z.ToString()
+            GazeObject4.transform.position.x.ToString(),
+            GazeObject4.transform.position.y.ToString(),
+            GazeObject4.transform.position.z.ToString()
         };
         string[] obj2Position ={
-            GazeObject2.transform.position.x.ToString(),
-            GazeObject2.transform.position.y.ToString(),
-            GazeObject2.transform.position.z.ToString()
+            GazeObject5.transform.position.x.ToString(),
+            GazeObject5.transform.position.y.ToString(),
+            GazeObject5.transform.position.z.ToString()
         };
         string[] obj3Position = {
-            GazeObject3.transform.position.x.ToString(),
-            GazeObject3.transform.position.y.ToString(),
-            GazeObject3.transform.position.z.ToString()
+            GazeObject6.transform.position.x.ToString(),
+            GazeObject6.transform.position.y.ToString(),
+            GazeObject6.transform.position.z.ToString()
         };
         string[] obj4Position = {
             AvoidObject1.transform.position.x.ToString(),
@@ -642,45 +581,7 @@ public class GazeCollectionWithModel : MonoBehaviour
         File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", value);
     }
 
-    void LinearPursuitObjectCallback()
-    {
-        MeasureTime = DateTime.Now.Ticks;
-        timeSpan = timer.ElapsedMilliseconds;
-        time_stamp = eyeData.timestamp;
-        string[] obj1Position = {
-            TrackObjectLine.transform.position.x.ToString(),
-            TrackObjectLine.transform.position.y.ToString(),
-            TrackObjectLine.transform.position.z.ToString()
-        };
-        string value =
-            MeasureTime.ToString() + "," +
-            timeSpan.ToString() + "," +
-            obj1Position[0] + "," +
-            obj1Position[1] + "," +
-            obj1Position[2] + "," +
-            Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", value);
-    }
-
-    void ArcPursuitObjectCallback()
-    {
-        MeasureTime = DateTime.Now.Ticks;
-        timeSpan = timer.ElapsedMilliseconds;
-        time_stamp = eyeData.timestamp;
-        string[] obj1Position = {
-            TrackObjectLine.transform.position.x.ToString(),
-            TrackObjectLine.transform.position.y.ToString(),
-            TrackObjectLine.transform.position.z.ToString()
-        };
-        string value =
-            MeasureTime.ToString() + "," +
-            timeSpan.ToString() + "," +
-            obj1Position[0] + "," +
-            obj1Position[1] + "," +
-            obj1Position[2] + "," +
-            Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", value);
-    }
+    #endregion
 
     /// <summary>
     /// Callback function to record the eye movement data.
@@ -737,8 +638,6 @@ public class GazeCollectionWithModel : MonoBehaviour
         cnt_callback++;
         //}
     }
-
-    #endregion
 
     /// <summary>
     /// Saccade task sequence.
@@ -1131,7 +1030,7 @@ public class GazeCollectionWithModel : MonoBehaviour
             calibrationClicked = false;
             calibrationButton.gameObject.GetComponentInChildren<TextMeshProUGUI>().text = "Caliboration";
             calibrated = false;
-            breakMessage2.text = "When you are ready to proceed with the game, kindly select the <Calibration> button.";
+            breakMessage2.text = "When you are ready to proceed with the game, select the <Calibration> button.";
             continueButton.gameObject.SetActive(false);
             continueButton.enabled = false;
 
@@ -1143,7 +1042,6 @@ public class GazeCollectionWithModel : MonoBehaviour
             {
                 calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();
             }
-            calibrated = true;
             breakMessage2.text = "Please click <Continue> to proceed with the game.";
             continueButton.gameObject.SetActive(true);
             continueButton.enabled = true;
@@ -1179,46 +1077,6 @@ public class GazeCollectionWithModel : MonoBehaviour
         countdownMessage2.text = "";
         CountdownCanvas2.gameObject.SetActive(false);
     }
-
-    private IEnumerator RapidMovementTest()
-    {
-        EnableHand(false);
-        GazeObject1.SetActive(true);
-        GazeObject2.SetActive(true);
-        GazeObject3.SetActive(true);
-        cnt_callback = 0;
-        RapidMovementObjectData_txt();
-        Testing = TestType.RapidMovementTest;
-
-        total_score = score = 0;
-        Invoke(nameof(Measurement), 0f);
-        gameTime = Time.time;
-        while (Time.time - gameTime < totalGameTime)
-        {
-            //StartCoroutine(UpdateGazeObjects());
-            if (continueClicked)
-            {
-                var global_angle = Vector3.Angle(forward, new Vector3(0, 0, 1));
-                breakMessage2.text = $"global angle:{global_angle}, (x,y,z)={forward.x}, {forward.y}, {forward.z}";
-                BreakCanvas2.enabled = true;
-                BreakCanvas2.gameObject.SetActive(true);
-            }
-            else
-            {
-                BreakCanvas2.enabled = false;
-                BreakCanvas2.gameObject.SetActive(false);
-            }
-            yield return null;
-        }
-        Testing = TestType.None;
-        GazeObject1.SetActive(false);
-        GazeObject2.SetActive(false);
-        GazeObject3.SetActive(false);
-
-        EnableHand(true);
-        Release();
-    }
-
     private IEnumerator LinearPursuit()
     {
         EnableHand(false);
@@ -1283,6 +1141,45 @@ public class GazeCollectionWithModel : MonoBehaviour
         }
         Testing = TestType.None;
         TrackObjectArc.SetActive(false);
+        EnableHand(true);
+        Release();
+    }
+
+    private IEnumerator RapidMovementTest()
+    {
+        EnableHand(false);
+        GazeObject1.SetActive(true);
+        GazeObject2.SetActive(true);
+        GazeObject3.SetActive(true);
+        cnt_callback = 0;
+        RapidMovementObjectData_txt();
+        Testing = TestType.RapidMovementTest;
+
+        total_score = score = 0;
+        Invoke(nameof(Measurement), 0f);
+        gameTime = Time.time;
+        while (Time.time - gameTime < totalGameTime)
+        {
+            //StartCoroutine(UpdateGazeObjects());
+            if (continueClicked)
+            {
+                var global_angle = Vector3.Angle(forward, new Vector3(0, 0, 1));
+                breakMessage2.text = $"global angle:{global_angle}, (x,y,z)={forward.x}, {forward.y}, {forward.z}";
+                BreakCanvas2.enabled = true;
+                BreakCanvas2.gameObject.SetActive(true);
+            }
+            else
+            {
+                BreakCanvas2.enabled = false;
+                BreakCanvas2.gameObject.SetActive(false);
+            }
+            yield return null;
+        }
+        Testing = TestType.None;
+        GazeObject1.SetActive(false);
+        GazeObject2.SetActive(false);
+        GazeObject3.SetActive(false);
+
         EnableHand(true);
         Release();
     }

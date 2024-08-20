@@ -21,6 +21,5 @@ public class DisableHeadTracking : MonoBehaviour
         {
             camParent.localRotation = Quaternion.Inverse(camera.localRotation);
         }
-        
     }
 }
