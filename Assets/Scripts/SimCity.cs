@@ -346,12 +346,6 @@ public class SimCity : MonoBehaviour
         //input[0, 0, 25, 0] = 0.2440643f;
         //input[0, 0, 26, 0] = 0.901825f;
 
-        string inputLog = "input:";
-        for (int i = 0; i < CONTEXT_SIZE * DATA_PER_TIMESTEP; i++)
-        {
-            inputLog += " " + input[0, 0, i, 0];
-        }
-        UnityEngine.Debug.Log(inputLog);
         var Inputs = new Dictionary<string, Tensor>(){
             {"onnx::Gemm_0", input},
         };
@@ -359,16 +353,13 @@ public class SimCity : MonoBehaviour
         worker.Execute(Inputs);
         var output = worker.PeekOutput("11");
         var forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]);
-        UnityEngine.Debug.Log(forward);
 
         var new_forward = forward.normalized;
 
         Quaternion rotation = Quaternion.LookRotation(new_forward);
-        UnityEngine.Debug.Log(rotation);
         if (DisableHeadTracking.Disable)
         {
             player.rotation = Quaternion.Slerp(player.rotation, rotation, Time.deltaTime * 5.0f);
-            UnityEngine.Debug.Log(player.rotation);
         }
     }
 

@@ -2,16 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using UnityEngine;
-using UnityEngine.InputSystem;
-using System.IO;
-using ViveSR.anipal.Eye;
-using ViveSR.anipal;
-using ViveSR;
-using UnityEngine.UI;
-using Valve.VR.InteractionSystem;
-using System.Diagnostics;
+
 using Unity.Barracuda;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using ViveSR;
+using ViveSR.anipal;
+using ViveSR.anipal.Eye;
 
 public class ModelSim : MonoBehaviour
 {
@@ -32,17 +29,27 @@ public class ModelSim : MonoBehaviour
         RapidMovementTest,
     }
 
-    private static int _frame;
-
     private static int _playerID;
     private static Transform _player;
+    private Quaternion _playerRotationStart;
+    private Quaternion _playerLocalRotationStart;
 
-    private ModelType _modelType = ModelType.MLP;
+    private ModelType _modelType;
+    private readonly static ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
+    {
+        new ModelType[] { ModelType.BaselineVector, ModelType.LSTM, ModelType.MLP },
+        new ModelType[] { ModelType.BaselineVector, ModelType.MLP, ModelType.LSTM },
+        new ModelType[] { ModelType.LSTM, ModelType.BaselineVector, ModelType.MLP },
+        new ModelType[] { ModelType.LSTM, ModelType.MLP, ModelType.BaselineVector },
+        new ModelType[] { ModelType.MLP, ModelType.BaselineVector, ModelType.LSTM },
+        new ModelType[] { ModelType.MLP, ModelType.LSTM, ModelType.BaselineVector }
+    };
+    private ModelType[] _modelTypeOrdering;
+    private readonly static string[] MODEL_ALIASES = { "A", "B", "C" };
 
     public NNModel ModelAssetLSTM;
     private static Model _modelLSTM;
     private static Tensor _tensorLSTMInput, _tensorLSTMHidden, _tensorLSTMContext;
-    //private static bool first_output;
     private static IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
 
     public NNModel ModelAssetMLP;
@@ -69,24 +76,25 @@ public class ModelSim : MonoBehaviour
     private bool _firstFrame;
     private TestType _testType;
 
-    //private const int SECONDS_PER_TRIAL = 30;
-    private const int SECONDS_PER_TRIAL = 8;
+    private const int SECONDS_PER_TRIAL = 10;
     private const int SHORT_BREAK = 5;
     private float _gameTime;
 
-    public bool Calibrate;
+    public bool DoCalibrateAtStart;
 
     // Start is called before the first frame update
     void Start()
     {
         Invoke(nameof(SystemCheck), 0.5f);                // System check.
-        if (Calibrate)
+        if (DoCalibrateAtStart)
         {
             SRanipal_Eye_v2.LaunchEyeCalibration();
         }
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
 
         _player = Camera.main.transform.parent.parent;
+        _playerRotationStart = _player.rotation;
+        _playerLocalRotationStart = _player.localRotation;
 
         _modelLSTM = ModelLoader.Load(ModelAssetLSTM);
         _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
@@ -99,8 +107,14 @@ public class ModelSim : MonoBehaviour
         _tensorMLPInput = new Tensor(1, 1, 27, 1);
 
         //first_output = true;
+        _modelType = ModelType.None;
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
+
+        System.Random rng = new System.Random();
+        int orderingIndex = rng.Next() % 6;
+        UnityEngine.Debug.Log("orderingIndex: " + orderingIndex); // TODO: Persist to .csv.
+        _modelTypeOrdering = MODEL_TYPE_ORDERINGS[orderingIndex];
 
         // Create buffers for storing the history of gaze vectors.
         _bufferGazeL = new List<Vector3>();
@@ -191,12 +205,6 @@ public class ModelSim : MonoBehaviour
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref _eyeData);
         if (error == ViveSR.Error.WORK)
         {
-            // gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
-            // gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
-
-            // gaze_direct_L.x = gaze_direct_L.x * -1;
-            // gaze_direct_R.x = gaze_direct_R.x * -1;
-
             SetGazeVectors(_eyeData.verbose_data.left.gaze_direction_normalized, _eyeData.verbose_data.right.gaze_direction_normalized);
         }
     }
@@ -292,25 +300,19 @@ public class ModelSim : MonoBehaviour
         RaycastHit hit;
         if (_testType == TestType.SmoothLinearTest)
         {
-            if (Physics.Raycast(gaze, out hit))
-            {
-                bool didHit = hit.transform.gameObject == TrackObjectLine;
-                TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
-            }
+            bool didHit = Physics.Raycast(gaze, out hit) && hit.transform.gameObject == TrackObjectLine;
+            TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
         }
         else if (_testType == TestType.SmoothArcTest)
         {
-            if (Physics.Raycast(gaze, out hit))
-            {
-                bool didHit = hit.transform.gameObject == TrackObjectArc;
-                TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit);
-            }
+            bool didHit = Physics.Raycast(gaze, out hit) && hit.transform.gameObject == TrackObjectArc;
+            TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit);
         }
         else if (_testType == TestType.RapidMovementTest)
         {
+            GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
             if (Physics.Raycast(gaze, out hit))
             {
-                GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
                 foreach (GameObject gazeObject in gazeObjects)
                 {
                     gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(hit.transform.gameObject == gazeObject);
@@ -511,7 +513,9 @@ public class ModelSim : MonoBehaviour
 
     private void ResetHead()
     {
-        _player.rotation = Quaternion.LookRotation(new Vector3(0, 0, 1));
+        //_player.rotation = Quaternion.LookRotation(new Vector3(0, 0, 1));
+        _player.rotation = _playerRotationStart;
+        _player.localRotation = _playerLocalRotationStart;
     }
 
     /// <summary>
@@ -538,39 +542,122 @@ public class ModelSim : MonoBehaviour
             "\n\nPress continue if you agree with the privacy statement and are ready to begin.";
         yield return StartCoroutine(DisplayBreakMenu());
 
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 0)
+            {
+                BreakMessage.text =
+                    "LINEAR PURSUIT\n" +
+                    "\n" +
+                    "Follow the floating cube. It will move around in straight lines.\n" +
+                    "Look directly at the cube to change its color.\n" +
+                    "\n" +
+                    "When you are ready to begin the Linear Pursuit section of the test, press continue.";
+            }
+            else
+            {
+                BreakMessage.text =
+                    "In this trial, you will not be able to move your head to look around.\n" +
+                    " Our assistive technology will move the view based on your eye movements.\n" +
+                    " We recommend keeping your head level and still. Move only your eyes.\n" +
+                    "\n" +
+                    "When you are ready to start Linear Pursuit\n" +
+                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+            }
+            yield return StartCoroutine(DisplayBreakMenu());
+            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
+            yield return StartCoroutine(LinearPursuit());
+            _modelType = ModelType.None;
+        }
+
         BreakMessage.text =
-            "When you are ready to begin the Linear Pursuit section of the test, press continue.";
+            "Linear Pursuit Test Complete!";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-        yield return StartCoroutine(LinearPursuit());
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 0)
+            {
+                BreakMessage.text =
+                    "ARC PURSUIT\n" +
+                    "\n" +
+                    "Follow the floating cube. It will move around in curved paths.\n" +
+                    "Look directly at the cube to change its color.\n" +
+                    "\n" +
+                    "You may move your head to look around.\n" +
+                    "\n" +
+                    "When you are ready to begin the Arc Pursuit section of the test, press continue.";
+            }
+            else
+            {
+                BreakMessage.text =
+                    "In this trial, you will not be able to move your head to look around.\n" +
+                    " Our assistive technology will move the view based on your eye movements.\n" +
+                    " We recommend keeping your head level and still. Move only your eyes.\n" +
+                    "\n" +
+                    "When you are ready to start Arc Pursuit\n" +
+                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+            }
+            yield return StartCoroutine(DisplayBreakMenu());
+            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
+            yield return StartCoroutine(ArcPursuit());
+            _modelType = ModelType.None;
+        }
 
         BreakMessage.text =
-            "Linear Pursuit Test Complete!\n" +
+            "Arc Pursuit Test Complete!";
+        yield return StartCoroutine(DisplayBreakMenu());
+
+        for (int i = 0; i < 4; i++)
+        {
+            if (i == 0)
+            {
+                BreakMessage.text =
+                    "RAPID MOVEMENT\n" +
+                    "\n" +
+                    "For the Rapid Movement section of the test, three cubes will spawn in\n" +
+                    "various locations in front of you and will begin to move towards you.\n" +
+                    "Look directly at the cubes to reset them before they reach you.\n" +
+                    "\n" +
+                    "You may move your head to look around.\n" +
+                    "\n" +
+                    "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
+                    "Press continue when you are ready to begin.";
+            }
+            else
+            {
+                BreakMessage.text =
+                    "In this trial, you will not be able to move your head to look around.\n" +
+                    " Our assistive technology will move the view based on your eye movements.\n" +
+                    " We recommend keeping your head level and still. Move only your eyes.\n" +
+                    "\n" +
+                    "When you are ready to start Rapid Movement\n" +
+                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+            }
+            yield return StartCoroutine(DisplayBreakMenu());
+            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
+            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
+            yield return StartCoroutine(RapidMovementTest());
+            _modelType = ModelType.None;
+        }
+
+        BreakMessage.text =
+            "All Tests Complete! Thank you!\n" +
             "\n" +
-            "When you are ready to begin the Arc Pursuit section of the test, press continue.";
+            "Press continue to try the assistive technology in a different environment.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-        yield return StartCoroutine(ArcPursuit());
-
-        BreakMessage.text =
-            "Arc Pursuit Test Complete!\n" +
-            "\n" +
-            "For the Rapid Movement section of the test, 3 cubes will spawn in\n" +
-            "various locations in front of you and will begin to move towards you.\n" +
-            "Look at the cubes to reset them before they reach you.\n" +
-            "\n" +
-            "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
-            "Press continue when you are ready to begin.";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-        yield return StartCoroutine(RapidMovementTest());
-
-        BreakMessage.text =
-            "All Tests Complete! Thank you!";
-        yield return StartCoroutine(DisplayBreakMenu());
+        BreakMessage.text = "Loading City...";
+        BreakCanvas.enabled = true;
+        BreakCanvas.gameObject.SetActive(true);
+        AsyncOperation load = SceneManager.LoadSceneAsync("CityEnvironment", LoadSceneMode.Single);
+        UnityEngine.EventSystems.EventSystem.current.enabled = false;
+        while (!load.isDone)
+        {
+            yield return null;
+        }
     }
 
     /// <summary>
@@ -615,38 +702,24 @@ public class ModelSim : MonoBehaviour
     {
         TrackObjectLine.SetActive(true);
         _testType = TestType.SmoothLinearTest;
-        DisableHeadTracking.Disable = true;
-        ResetModel();
-        Invoke(nameof(Measurement), 0f);
-        _gameTime = Time.time;
-        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
+        IEnumerator trial = TrialStart();
+        while (trial.MoveNext())
         {
-            yield return null;
+            yield return trial.Current;
         }
-        _testType = TestType.None;
-        DisableHeadTracking.Disable = false;
         TrackObjectLine.SetActive(false);
-        ResetHead();
-        Release();
     }
 
     private IEnumerator ArcPursuit()
     {
         TrackObjectArc.SetActive(true);
         _testType = TestType.SmoothArcTest;
-        DisableHeadTracking.Disable = true;
-        ResetModel();
-        Invoke(nameof(Measurement), 0f);
-        _gameTime = Time.time;
-        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
+        IEnumerator trial = TrialStart();
+        while (trial.MoveNext())
         {
-            yield return null;
+            yield return trial.Current;
         }
-        _testType = TestType.None;
-        DisableHeadTracking.Disable = false;
         TrackObjectArc.SetActive(false);
-        ResetHead();
-        Release();
     }
 
     private IEnumerator RapidMovementTest()
@@ -655,21 +728,30 @@ public class ModelSim : MonoBehaviour
         GazeObject2.SetActive(true);
         GazeObject3.SetActive(true);
         _testType = TestType.RapidMovementTest;
-        DisableHeadTracking.Disable = true;
+        IEnumerator trial = TrialStart();
+        while (trial.MoveNext())
+        {
+            yield return trial.Current;
+        }
+        GazeObject1.SetActive(false);
+        GazeObject2.SetActive(false);
+        GazeObject3.SetActive(false);
+    }
+
+    private IEnumerator TrialStart()
+    {
+        DisableHeadTracking.Disable = _modelType != ModelType.None;
         ResetModel();
         Invoke(nameof(Measurement), 0f);
         _gameTime = Time.time;
         while (Time.time - _gameTime < SECONDS_PER_TRIAL)
         {
-            //StartCoroutine(UpdateGazeObjects());
             yield return null;
         }
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
-        GazeObject1.SetActive(false);
-        GazeObject2.SetActive(false);
-        GazeObject3.SetActive(false);
-        ResetHead();
+        //ResetHead();
+        Invoke(nameof(ResetHead), 1.0f);
         Release();
     }
 
@@ -691,8 +773,5 @@ public class ModelSim : MonoBehaviour
         _tensorMLPInput.Dispose();
         _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
         _tensorMLPInput = new Tensor(1, 1, 27, 1);
-
-        //first_output = true;
-        _frame = 0;
     }
 }
