@@ -685,8 +685,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 0.05
-  m_fontSizeBase: 0.05
+  m_fontSize: 0.15
+  m_fontSizeBase: 0.15
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 0
@@ -2196,6 +2196,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4937e31b6ccd7b44694b1e647be389ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  SeedModelTypeOrdering: 0
   ModelAssetLSTM: {fileID: 5022602860645237092, guid: a78d46cb092240240beb9f3fc2bb4ba6, type: 3}
   ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
   GazeObject1: {fileID: 1517572048}

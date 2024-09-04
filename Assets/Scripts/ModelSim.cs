@@ -23,19 +23,21 @@ public class ModelSim : MonoBehaviour
 
     public enum TestType
     {
-        None,
         SmoothLinearTest,
         SmoothArcTest,
         RapidMovementTest,
+        None,
     }
+
+    private const int TEST_COUNT = 4;
+    private const int TRIAL_COUNT = 3;
 
     private static int _playerID;
     private static Transform _player;
     private Quaternion _playerRotationStart;
-    private Quaternion _playerLocalRotationStart;
 
     private ModelType _modelType;
-    private readonly static ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
+    private static readonly ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
     {
         new ModelType[] { ModelType.BaselineVector, ModelType.LSTM, ModelType.MLP },
         new ModelType[] { ModelType.BaselineVector, ModelType.MLP, ModelType.LSTM },
@@ -44,8 +46,8 @@ public class ModelSim : MonoBehaviour
         new ModelType[] { ModelType.MLP, ModelType.BaselineVector, ModelType.LSTM },
         new ModelType[] { ModelType.MLP, ModelType.LSTM, ModelType.BaselineVector }
     };
-    private ModelType[] _modelTypeOrdering;
-    private readonly static string[] MODEL_ALIASES = { "A", "B", "C" };
+    public int SeedModelTypeOrdering;
+    private List<int> _modelTypeOrderingIndices = new List<int>();
 
     public NNModel ModelAssetLSTM;
     private static Model _modelLSTM;
@@ -69,16 +71,14 @@ public class ModelSim : MonoBehaviour
     #endregion
 
     private EyeParameter _eyeParameter = new EyeParameter();
-    private GazeRayParameter _gaze = new GazeRayParameter();
     private static EyeData_v2 _eyeData = new EyeData_v2();
     private static bool _eyeCallbackRegistered = false;
 
     private bool _firstFrame;
-    private TestType _testType;
+    private TestType _testType = TestType.None;
 
-    private const int SECONDS_PER_TRIAL = 10;
-    private const int SHORT_BREAK = 5;
-    private float _gameTime;
+    private const int SECONDS_TRIAL = 30;
+    private const int SECONDS_COUNTDOWN = 5;
 
     public bool DoCalibrateAtStart;
 
@@ -94,7 +94,6 @@ public class ModelSim : MonoBehaviour
 
         _player = Camera.main.transform.parent.parent;
         _playerRotationStart = _player.rotation;
-        _playerLocalRotationStart = _player.localRotation;
 
         _modelLSTM = ModelLoader.Load(ModelAssetLSTM);
         _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
@@ -111,10 +110,14 @@ public class ModelSim : MonoBehaviour
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
 
-        System.Random rng = new System.Random();
-        int orderingIndex = rng.Next() % 6;
-        UnityEngine.Debug.Log("orderingIndex: " + orderingIndex); // TODO: Persist to .csv.
-        _modelTypeOrdering = MODEL_TYPE_ORDERINGS[orderingIndex];
+        UnityEngine.Random.InitState(31);
+
+        System.Random rng = new System.Random(SeedModelTypeOrdering);
+        for (int i = 0; i < TEST_COUNT; i++)
+        {
+            _modelTypeOrderingIndices.Add(rng.Next() % MODEL_TYPE_ORDERINGS.Length);
+        }
+        UnityEngine.Debug.Log("orderingIndices: " + _modelTypeOrderingIndices); // TODO: Persist to .csv.
 
         // Create buffers for storing the history of gaze vectors.
         _bufferGazeL = new List<Vector3>();
@@ -122,13 +125,13 @@ public class ModelSim : MonoBehaviour
         _bufferForward = new List<Vector3>();
 
         _firstFrame = true;
+        _continueClicked = false;
 
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
-        _continueClicked = false;
     }
 
     /// <summary>
@@ -338,7 +341,7 @@ public class ModelSim : MonoBehaviour
         float angle_boundary = 5.0f;  //boundary of eye angle
         float rotate_speed = 4f;  //each rotate angle
 
-        // eye angle in x direction > angle_boundry : rotate the 
+        // eye angle in x direction > angle_boundary : rotate the 
         Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
 
         var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
@@ -347,12 +350,6 @@ public class ModelSim : MonoBehaviour
         {
             _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
         }
-
-        //var obj_weight = 10 / _player.rotation.z;
-        //if (_player.rotation.z == 0)
-        //{
-        //    obj_weight = 0;
-        //}
     }
 
     private void QuadrantBaseline()
@@ -515,7 +512,7 @@ public class ModelSim : MonoBehaviour
     {
         //_player.rotation = Quaternion.LookRotation(new Vector3(0, 0, 1));
         _player.rotation = _playerRotationStart;
-        _player.localRotation = _playerLocalRotationStart;
+        DisableHeadTracking.ResetHead();
     }
 
     /// <summary>
@@ -523,51 +520,70 @@ public class ModelSim : MonoBehaviour
     /// </summary>
     private IEnumerator Sequence()
     {
-        UnityEngine.Debug.Log("Sequence started");
         // DO NOT REMOVE THE PRIVACY STATEMENT, REQUIRED BY HTC 
         // Participants should see the paper version during the consent process https://docs.google.com/document/d/13ehQgG4bj30qM26owmaHe9gsbGhAz9uMMaSYZKIm2cA/edit?usp=sharing
+        //BreakMessage.text =
+        //    "Welcome to the virtual environment. The following is a version of the privacy statement you should have already seen during the consent process." +
+        //    "\nIf you have not seen this do not continue until the staff provide you with a physical copy of this and have explained it and answered any questions to your satifaction." +
+        //    "\n\n Privacy Statement: While using this virtual environment, data about your facial expressions will be saved." +
+        //    "\n This includes head position and orientation, gaze origin, gaze direction, gaze sensitivity scale, validity of data, time stamps of the data, and details concerning items in the virtual environment." +
+        //    "\nWe will not collect images of your eyes, and the data collected from this environment should not be able to identify you when used independently of our other records." +
+        //    "\nWe will never sell this data to another party, and we will work to maintain its confidentiality to the best of our ability." +
+        //    "\nWe will not share this information with individuals outside of our research team without your consent, and we will not use this data to discriminate against any party." +
+        //    "\nThis data wil not be used to make decisions regarding eligibility or terms for any services, including loans. We will not use third party services to process this data without your consent." +
+        //    "\nWe will use this data to learn how paitients experiencing limited neck mobility may regain a portion of autonomy by controlling an assistive neck brace. " +
+        //    "\nBecause we are using this data for a healthcare purpose, we will comply with regulations such as HIPAA as it applies to any data collected." +
+        //    "\nWe will follow other procedures to ensure all of your data is protected and not misused. If you are concerned that your data will be or has been misused, or are concerned about the data being saved, " +
+        //    "\ndiscontinue participation in the study immediately and contact the University of Utah IRB. This privacy statement was last modified August 18, 2022." +
+        //    "\n\nPress continue if you agree with the privacy statement and are ready to begin.";
+
         BreakMessage.text =
-            "Welcome to the virtual environment. The following is a version of the privacy statement you should have already seen during the consent process." +
-            "\nIf you have not seen this do not continue until the staff provide you with a physical copy of this and have explained it and answered any questions to your satifaction." +
-            "\n\n Privacy Statement: While using this virtual environment, data about your facial expressions will be saved." +
-            "\n This includes head position and orientation, gaze origin, gaze direction, gaze sensitivity scale, validity of data, time stamps of the data, and details concerning items in the virtual environment." +
-            "\nWe will not collect images of your eyes, and the data collected from this environment should not be able to identify you when used independently of our other records." +
-            "\nWe will never sell this data to another party, and we will work to maintain its confidentiality to the best of our ability." +
-            "\nWe will not share this information with individuals outside of our research team without your consent, and we will not use this data to discriminate against any party." +
-            "\nThis data wil not be used to make decisions regarding eligibility or terms for any services, including loans. We will not use third party services to process this data without your consent." +
-            "\nWe will use this data to learn how paitients experiencing limited neck mobility may regain a portion of autonomy by controlling an assistive neck brace. " +
-            "\nBecause we are using this data for a healthcare purpose, we will comply with regulations such as HIPAA as it applies to any data collected." +
-            "\nWe will follow other procedures to ensure all of your data is protected and not misused. If you are concerned that your data will be or has been misused, or are concerned about the data being saved, " +
-            "\ndiscontinue participation in the study immediately and contact the University of Utah IRB. This privacy statement was last modified August 18, 2022." +
-            "\n\nPress continue if you agree with the privacy statement and are ready to begin.";
+            "Welcome to the virtual environment.\n" +
+            "\n" +
+            "Using the trigger button of the controller, press continue.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        for (int i = 0; i < 4; i++)
+        /* LINEAR PURSUIT START */
+
+        BreakMessage.text =
+            "LINEAR PURSUIT\n" +
+            "\n" +
+            "Follow the floating cube. It will move around in straight lines.\n" +
+            "Look directly at the cube to change its color.\n" +
+            "\n" +
+            "When you are ready to begin the Linear Pursuit section of the test, press continue.";
+        yield return StartCoroutine(DisplayBreakMenu());
+        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+        _modelType = ModelType.None;
+        yield return StartCoroutine(LinearPursuit(false));
+
+        for (int i = 0; i < TRIAL_COUNT; i++)
         {
+            string qualifier = (i == 0) ? "an" : "a different";
             if (i == 0)
             {
                 BreakMessage.text =
-                    "LINEAR PURSUIT\n" +
+                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
+                    " to your head movements.\n" +
                     "\n" +
-                    "Follow the floating cube. It will move around in straight lines.\n" +
-                    "Look directly at the cube to change its color.\n" +
+                    "You may freely move your head.\n" +
                     "\n" +
-                    "When you are ready to begin the Linear Pursuit section of the test, press continue.";
+                    "To start Linear Pursuit with assistance, press continue.";
             }
             else
             {
                 BreakMessage.text =
-                    "In this trial, you will not be able to move your head to look around.\n" +
+                    "In this trial, you will NOT be able to move your head to look around.\n" +
                     " Our assistive technology will move the view based on your eye movements.\n" +
                     " We recommend keeping your head level and still. Move only your eyes.\n" +
                     "\n" +
                     "When you are ready to start Linear Pursuit\n" +
-                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+                    " using only your eyes, press continue.";
             }
             yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
-            yield return StartCoroutine(LinearPursuit());
+            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[0]][i];
+            yield return StartCoroutine(LinearPursuit(true));
             _modelType = ModelType.None;
         }
 
@@ -575,34 +591,49 @@ public class ModelSim : MonoBehaviour
             "Linear Pursuit Test Complete!";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        for (int i = 0; i < 4; i++)
+        /* LINEAR PURSUIT END - ARC PURSUIT START */
+
+        BreakMessage.text =
+            "ARC PURSUIT\n" +
+            "\n" +
+            "Follow the floating cube. It will move around in curved paths.\n" +
+            "Look directly at the cube to change its color.\n" +
+            "\n" +
+            "You may move your head to look around.\n" +
+            "\n" +
+            "When you are ready to begin the Arc Pursuit section of the test, press continue.";
+        yield return StartCoroutine(DisplayBreakMenu());
+        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+        _modelType = ModelType.None;
+        yield return StartCoroutine(ArcPursuit(false));
+
+        for (int i = 0; i < TRIAL_COUNT; i++)
         {
+            string qualifier = (i == 0) ? "an" : "a different";
             if (i == 0)
             {
                 BreakMessage.text =
-                    "ARC PURSUIT\n" +
+                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
+                    " to your head movements.\n" +
                     "\n" +
-                    "Follow the floating cube. It will move around in curved paths.\n" +
-                    "Look directly at the cube to change its color.\n" +
+                    "You may freely move your head.\n" +
                     "\n" +
-                    "You may move your head to look around.\n" +
-                    "\n" +
-                    "When you are ready to begin the Arc Pursuit section of the test, press continue.";
+                    "To start Arc Pursuit with assistance, press continue.";
             }
             else
             {
                 BreakMessage.text =
-                    "In this trial, you will not be able to move your head to look around.\n" +
+                    "In this trial, you will NOT be able to move your head to look around.\n" +
                     " Our assistive technology will move the view based on your eye movements.\n" +
                     " We recommend keeping your head level and still. Move only your eyes.\n" +
                     "\n" +
                     "When you are ready to start Arc Pursuit\n" +
-                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+                    " using only your eyes, press continue.";
             }
             yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
-            yield return StartCoroutine(ArcPursuit());
+            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[1]][i];
+            yield return StartCoroutine(ArcPursuit(true));
             _modelType = ModelType.None;
         }
 
@@ -610,54 +641,92 @@ public class ModelSim : MonoBehaviour
             "Arc Pursuit Test Complete!";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        for (int i = 0; i < 4; i++)
+        /* ARC PURSUIT END - RAPID MOVEMENT START */
+
+        BreakMessage.text =
+            "RAPID MOVEMENT\n" +
+            "\n" +
+            "For the Rapid Movement section of the test, three cubes will spawn in\n" +
+            "various locations in front of you and will begin to move towards you.\n" +
+            "Look directly at the cubes to reset them before they reach you.\n" +
+            "\n" +
+            "You may move your head to look around.\n" +
+            "\n" +
+            "This test will last for " + SECONDS_TRIAL + " seconds.\n" +
+            "Press continue when you are ready to begin.";
+        yield return StartCoroutine(DisplayBreakMenu());
+        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+        _modelType = ModelType.None;
+        yield return StartCoroutine(RapidMovementTest(false));
+
+        for (int i = 0; i < TRIAL_COUNT; i++)
         {
+            string qualifier = (i == 0) ? "an" : "a different";
             if (i == 0)
             {
                 BreakMessage.text =
-                    "RAPID MOVEMENT\n" +
+                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
+                    " to your head movements.\n" +
                     "\n" +
-                    "For the Rapid Movement section of the test, three cubes will spawn in\n" +
-                    "various locations in front of you and will begin to move towards you.\n" +
-                    "Look directly at the cubes to reset them before they reach you.\n" +
+                    "You may freely move your head.\n" +
                     "\n" +
-                    "You may move your head to look around.\n" +
-                    "\n" +
-                    "This test will last for " + SECONDS_PER_TRIAL + " seconds.\n" +
-                    "Press continue when you are ready to begin.";
+                    "To start Rapid Movement with assistance, press continue.";
             }
             else
             {
                 BreakMessage.text =
-                    "In this trial, you will not be able to move your head to look around.\n" +
+                    "In this trial, you will NOT be able to move your head to look around.\n" +
                     " Our assistive technology will move the view based on your eye movements.\n" +
                     " We recommend keeping your head level and still. Move only your eyes.\n" +
                     "\n" +
                     "When you are ready to start Rapid Movement\n" +
-                    " using assistant '" + MODEL_ALIASES[i - 1] + "', press continue.";
+                    " using only your eyes, press continue.";
             }
             yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
-            _modelType = (i == 0) ? ModelType.None : _modelTypeOrdering[i - 1];
-            yield return StartCoroutine(RapidMovementTest());
+            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[2]][i];
+            yield return StartCoroutine(RapidMovementTest(true));
             _modelType = ModelType.None;
         }
 
         BreakMessage.text =
-            "All Tests Complete! Thank you!\n" +
+            "All tests Complete!\n" +
             "\n" +
             "Press continue to try the assistive technology in a different environment.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        BreakMessage.text = "Loading City...";
-        BreakCanvas.enabled = true;
-        BreakCanvas.gameObject.SetActive(true);
-        AsyncOperation load = SceneManager.LoadSceneAsync("CityEnvironment", LoadSceneMode.Single);
-        UnityEngine.EventSystems.EventSystem.current.enabled = false;
-        while (!load.isDone)
+        /* RAPID MOVEMENT END - CITY SCENE START */
+
+        AsyncOperation loadCity = SceneManager.LoadSceneAsync("CityScene", LoadSceneMode.Additive);
+        while (!loadCity.isDone)
         {
             yield return null;
         }
+        //_player.position = new Vector3(-166.8f, 6.22f, -424.8f); // Sidewalk corner under street light.
+
+        BreakMessage.text =
+            "Now, feel free to look around this city environment.\n" +
+            "\n" +
+            "Press continue when you're ready to move on.";
+        yield return StartCoroutine(DisplayBreakMenu());
+
+        for (int i = 0; i < TRIAL_COUNT; i++)
+        {
+            BreakMessage.text =
+                "Using only your eyes, look around this scene\n" +
+                " using our assistive technology.\n" +
+                "\n" +
+                "To begin looking with only your eyes, press continue.";
+            yield return StartCoroutine(DisplayBreakMenu());
+            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[3]][i];
+            // TODO: Spawn player randomly in one of a set of "good" starting positions.
+            yield return StartCoroutine(NoObjectiveTest(true));
+            // TODO: Return player to street light.
+            _modelType = ModelType.None;
+        }
+
+        BreakMessage.text = "That concludes the study.\n\nThank you!";
+        yield return StartCoroutine(DisplayBreakMenu());
     }
 
     /// <summary>
@@ -698,11 +767,11 @@ public class ModelSim : MonoBehaviour
         CountdownCanvas.gameObject.SetActive(false);
     }
 
-    private IEnumerator LinearPursuit()
+    private IEnumerator LinearPursuit(bool disableHead)
     {
         TrackObjectLine.SetActive(true);
         _testType = TestType.SmoothLinearTest;
-        IEnumerator trial = TrialStart();
+        IEnumerator trial = TrialStart(disableHead);
         while (trial.MoveNext())
         {
             yield return trial.Current;
@@ -710,11 +779,11 @@ public class ModelSim : MonoBehaviour
         TrackObjectLine.SetActive(false);
     }
 
-    private IEnumerator ArcPursuit()
+    private IEnumerator ArcPursuit(bool disableHead)
     {
         TrackObjectArc.SetActive(true);
         _testType = TestType.SmoothArcTest;
-        IEnumerator trial = TrialStart();
+        IEnumerator trial = TrialStart(disableHead);
         while (trial.MoveNext())
         {
             yield return trial.Current;
@@ -722,13 +791,13 @@ public class ModelSim : MonoBehaviour
         TrackObjectArc.SetActive(false);
     }
 
-    private IEnumerator RapidMovementTest()
+    private IEnumerator RapidMovementTest(bool disableHead)
     {
         GazeObject1.SetActive(true);
         GazeObject2.SetActive(true);
         GazeObject3.SetActive(true);
         _testType = TestType.RapidMovementTest;
-        IEnumerator trial = TrialStart();
+        IEnumerator trial = TrialStart(disableHead);
         while (trial.MoveNext())
         {
             yield return trial.Current;
@@ -738,20 +807,29 @@ public class ModelSim : MonoBehaviour
         GazeObject3.SetActive(false);
     }
 
-    private IEnumerator TrialStart()
+    private IEnumerator NoObjectiveTest(bool disableHead)
     {
-        DisableHeadTracking.Disable = _modelType != ModelType.None;
+        _testType = TestType.None;
+        IEnumerator trial = TrialStart(disableHead);
+        while (trial.MoveNext())
+        {
+            yield return trial.Current;
+        }
+    }
+
+    private IEnumerator TrialStart(bool disableHead)
+    {
+        DisableHeadTracking.Disable = disableHead;
         ResetModel();
         Invoke(nameof(Measurement), 0f);
-        _gameTime = Time.time;
-        while (Time.time - _gameTime < SECONDS_PER_TRIAL)
+        float gameTime = Time.time;
+        while (Time.time - gameTime < SECONDS_TRIAL)
         {
             yield return null;
         }
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
-        //ResetHead();
-        Invoke(nameof(ResetHead), 1.0f);
+        ResetHead();
         Release();
     }
 

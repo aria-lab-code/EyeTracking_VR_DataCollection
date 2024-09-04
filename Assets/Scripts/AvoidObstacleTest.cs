@@ -9,7 +9,6 @@ public class AvoidObstacleTest : MonoBehaviour
     public Color highlightColor = Color.red;
     public float animationTime = 0.1f;
 
-
     private Renderer _renderer;
     private Color _originalColor = Color.yellow;
     private Color _targetColor;

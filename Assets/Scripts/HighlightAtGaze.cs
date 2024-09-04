@@ -59,12 +59,10 @@ public class HighlightAtGaze : MonoBehaviour
         if (focused)
         {
             GazeCollection2.score++; // TODO: That's kinda janky, but w/e.
-            GazeCollectionWithModel.score++;
         }
         focused = false;
         _renderer = GetComponent<Renderer>();
         GazeCollection2.total_score++;
-        GazeCollectionWithModel.total_score++;
 
         if (init)
         {
