@@ -12,6 +12,8 @@ using ViveSR.anipal.Eye;
 
 public class ModelSim : MonoBehaviour
 {
+    private const bool DEBUG = true;
+
     public enum ModelType
     {
         None,
@@ -23,17 +25,22 @@ public class ModelSim : MonoBehaviour
 
     public enum TestType
     {
-        SmoothLinearTest,
-        SmoothArcTest,
-        RapidMovementTest,
+        LinearPursuit,
+        ArcPursuit,
+        RapidMovement,
+        RapidAvoid,
         None,
     }
 
-    private const int TEST_COUNT = 4;
+    private const bool ENABLE_CITY_SCENE = false;
+
+    private static ModelSim _instance; // Used with static eye tracker callback, `GazeCallbackStatic`.
+
+    private const int TEST_COUNT = (ENABLE_CITY_SCENE) ? 5 : 4;
     private const int TRIAL_COUNT = 3;
 
-    private static int _playerID;
-    private static Transform _player;
+    private int _playerID;
+    private Transform _player;
     private Quaternion _playerRotationStart;
 
     private ModelType _modelType;
@@ -49,35 +56,50 @@ public class ModelSim : MonoBehaviour
     public int SeedModelTypeOrdering;
     private List<int> _modelTypeOrderingIndices = new List<int>();
 
+    public int ModelDownsamplingRate;
+    private int _frameMod = 0; // Used with `DownsamplingRate` to perform inference only on each n-th frame.
+    public bool ModelUseRelativePositions;
+
+    private const int INSTANCE_SIZE = 9;
+
     public NNModel ModelAssetLSTM;
-    private static Model _modelLSTM;
-    private static Tensor _tensorLSTMInput, _tensorLSTMHidden, _tensorLSTMContext;
-    private static IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
+    private Model _modelLSTM;
+    private Tensor _tensorLSTMInput, _tensorLSTMHidden, _tensorLSTMContext;
+    private int _modelLSTMHiddenSize; // Initialized dynamically; used to allocate hidden and context tensors.
+    private IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
 
+    private const int MLP_WINDOW_SIZE = 3;
     public NNModel ModelAssetMLP;
-    private static Model _modelMLP;
-    private static Tensor _tensorMLPInput;
-    private static IWorker _workerMLP;
+    private Model _modelMLP;
+    private Tensor _tensorMLPInput;
+    private IWorker _workerMLP;
 
-    private static Vector3 _vecGazeL, _vecGazeR, _vecForward;
-    private static List<Vector3> _bufferGazeL, _bufferGazeR, _bufferForward;  // Create a buffer to hold a small history of states
-    private const int BUFFER_CAPACITY = 3;
+    private Vector3 _vecGazeL, _vecGazeR, _vecForward;
+    private Vector3[] _bufferGazeL, _bufferGazeR, _bufferForward;
+    private int _bufferCapacity;  // Create a buffer to hold a small history of states.
+    private int _bufferIndex = 0;
+    private int _bufferSize = 0;
 
-    #region "GUI interactions"
-    public GameObject GazeObject1, GazeObject2, GazeObject3, TrackObjectLine, TrackObjectArc;
+    public GameObject TrackObjectLine;
+    public GameObject TrackObjectArc;
+    public GameObject GazeObject1, GazeObject2, GazeObject3;
+    public GameObject AvoidObject1, AvoidObject2, AvoidObject3;
     public Canvas BreakCanvas, CountdownCanvas;
     public TextMesh BreakMessage, CountdownMessage;
-    private bool _continueClicked;
-    #endregion
+    private bool _continueClicked = false;
 
-    private EyeParameter _eyeParameter = new EyeParameter();
-    private static EyeData_v2 _eyeData = new EyeData_v2();
-    private static bool _eyeCallbackRegistered = false;
+    //private EyeParameter _eyeParameter = new EyeParameter();
+    private EyeData_v2 _eyeData = new EyeData_v2();
+    private bool _eyeCallbackRegistered = false;
 
-    private bool _firstFrame;
+    private bool _firstFrame = true;
     private TestType _testType = TestType.None;
 
-    private const int SECONDS_TRIAL = 30;
+    private int _ticksEye = 0;
+    private int _ticksUpdate = 0;
+    private int _ticksSequence = 0;
+
+    private const int SECONDS_TRIAL = 10;
     private const int SECONDS_COUNTDOWN = 5;
 
     public bool DoCalibrateAtStart;
@@ -85,7 +107,9 @@ public class ModelSim : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        Invoke(nameof(SystemCheck), 0.5f);                // System check.
+        _instance = this;
+
+        Invoke(nameof(EyeTrackerSystemCheck), 0.5f);
         if (DoCalibrateAtStart)
         {
             SRanipal_Eye_v2.LaunchEyeCalibration();
@@ -95,17 +119,6 @@ public class ModelSim : MonoBehaviour
         _player = Camera.main.transform.parent.parent;
         _playerRotationStart = _player.rotation;
 
-        _modelLSTM = ModelLoader.Load(ModelAssetLSTM);
-        _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
-        _tensorLSTMHidden = new Tensor(1, 1, 9, 1);
-        _tensorLSTMContext = new Tensor(1, 1, 9, 1);
-        _tensorLSTMInput = new Tensor(1, 1, 9, 1);
-
-        _modelMLP = ModelLoader.Load(ModelAssetMLP);
-        _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
-        _tensorMLPInput = new Tensor(1, 1, 27, 1);
-
-        //first_output = true;
         _modelType = ModelType.None;
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
@@ -115,39 +128,59 @@ public class ModelSim : MonoBehaviour
         System.Random rng = new System.Random(SeedModelTypeOrdering);
         for (int i = 0; i < TEST_COUNT; i++)
         {
-            _modelTypeOrderingIndices.Add(rng.Next() % MODEL_TYPE_ORDERINGS.Length);
+            if (DEBUG)
+            {
+                _modelTypeOrderingIndices.Add(0);
+            }
+            else
+            {
+                _modelTypeOrderingIndices.Add(rng.Next() % MODEL_TYPE_ORDERINGS.Length);
+            }
         }
         UnityEngine.Debug.Log("orderingIndices: " + _modelTypeOrderingIndices); // TODO: Persist to .csv.
 
-        // Create buffers for storing the history of gaze vectors.
-        _bufferGazeL = new List<Vector3>();
-        _bufferGazeR = new List<Vector3>();
-        _bufferForward = new List<Vector3>();
+        _modelLSTM = ModelLoader.Load(ModelAssetLSTM, true);
+        _modelLSTMHiddenSize = _modelLSTM.inputs[1].shape[6];
 
-        _firstFrame = true;
-        _continueClicked = false;
+        _modelMLP = ModelLoader.Load(ModelAssetMLP);
 
+        if (ModelUseRelativePositions)
+        {
+            // Need an additional data point to calculate difference between x_t and x_{t-downsampling_rate}.
+            _bufferCapacity = (MLP_WINDOW_SIZE + 1) * ModelDownsamplingRate;
+        }
+        else
+        {
+            _bufferCapacity = MLP_WINDOW_SIZE * ModelDownsamplingRate;
+        }
+        _bufferGazeL = new Vector3[_bufferCapacity];
+        _bufferGazeR = new Vector3[_bufferCapacity];
+        _bufferForward = new Vector3[_bufferCapacity];
+
+        TrackObjectLine.SetActive(false);
+        TrackObjectArc.SetActive(false);
         GazeObject1.SetActive(false);
         GazeObject2.SetActive(false);
         GazeObject3.SetActive(false);
-        TrackObjectLine.SetActive(false);
-        TrackObjectArc.SetActive(false);
+        AvoidObject1.SetActive(false);
+        AvoidObject2.SetActive(false);
+        AvoidObject3.SetActive(false);
     }
 
     /// <summary>
     /// Check if the system works properly.
     /// </summary>
-    void SystemCheck()
+    void EyeTrackerSystemCheck()
     {
         if (SRanipal_Eye_API.GetEyeData_v2(ref _eyeData) == ViveSR.Error.WORK)
         {
             UnityEngine.Debug.Log("Device is working properly.");
         }
 
-        if (SRanipal_Eye_API.GetEyeParameter(ref _eyeParameter) == ViveSR.Error.WORK)
-        {
-            UnityEngine.Debug.Log("Eye parameters are measured.");
-        }
+        //if (SRanipal_Eye_API.GetEyeParameter(ref _eyeParameter) == ViveSR.Error.WORK)
+        //{
+        //    UnityEngine.Debug.Log("Eye parameters are measured.");
+        //}
 
         Error result_eye_init = SRanipal_API.Initial(SRanipal_Eye_v2.ANIPAL_TYPE_EYE_V2, IntPtr.Zero);
 
@@ -162,10 +195,10 @@ public class ModelSim : MonoBehaviour
         }
     }
 
-    void Measurement()
+    void EyeTrackerMeasurement()
     {
-        EyeParameter eye_parameter = new EyeParameter();
-        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+        //EyeParameter eye_parameter = new EyeParameter();
+        //SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
 
         if (SRanipal_Eye_Framework.Status != SRanipal_Eye_Framework.FrameworkStatus.WORKING)
         {
@@ -176,21 +209,21 @@ public class ModelSim : MonoBehaviour
         UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
         if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback && !_eyeCallbackRegistered)
         {
-            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GazeCallbackStatic));
             _eyeCallbackRegistered = true;
         }
         else if (!SRanipal_Eye_Framework.Instance.EnableEyeDataCallback && _eyeCallbackRegistered)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GazeCallbackStatic));
             _eyeCallbackRegistered = false;
         }
     }
 
-    void Release()
+    void EyeTrackerRelease()
     {
         if (_eyeCallbackRegistered)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GetGazeData));
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)GazeCallbackStatic));
             _eyeCallbackRegistered = false;
         }
     }
@@ -198,73 +231,72 @@ public class ModelSim : MonoBehaviour
     /// <summary>
     /// Callback function to record the eye movement data.
     /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
+    /// 
+    /// Sep 12 2024, Eric: I found out that this function has to be STATIC or the app crashes. Go figure.
+    ///     Therefore, everything that this function calls/accesses must also be static.
     /// </summary>
-    private static void GetGazeData(ref EyeData_v2 eye_data)
+    private static void GazeCallbackStatic(ref EyeData_v2 eye_data)
     {
-        EyeParameter eye_parameter = new EyeParameter();
-        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+        _instance.GazeCallback(eye_data);
+    }
+
+    /// <summary>
+    /// Runs at 120 Hz.
+    /// </summary>
+    /// <param name="eye_data"></param>
+    private void GazeCallback(EyeData_v2 eye_data)
+    {
+        //EyeParameter eye_parameter = new EyeParameter();
+        //SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
         _eyeData = eye_data;
 
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref _eyeData);
         if (error == ViveSR.Error.WORK)
         {
-            SetGazeVectors(_eyeData.verbose_data.left.gaze_direction_normalized, _eyeData.verbose_data.right.gaze_direction_normalized);
-        }
-    }
-
-    private static void SetGazeVectors(Vector3 gazeL, Vector3 gazeR)
-    {
-        gazeL.x *= -1;
-        gazeR.x *= -1;
-
-        _vecGazeL = gazeL;
-        _vecGazeR = gazeR;
-
-        _bufferGazeL.Add(_vecGazeL);
-        if (_bufferGazeL.Count > BUFFER_CAPACITY)
-        {
-            _bufferGazeL.RemoveAt(0);
+            //SetGazeVectors(_eyeData.verbose_data.left.gaze_direction_normalized, _eyeData.verbose_data.right.gaze_direction_normalized);
+            Vector3 gazeL = _eyeData.verbose_data.left.gaze_direction_normalized;
+            Vector3 gazeR = _eyeData.verbose_data.right.gaze_direction_normalized;
+            gazeL.x *= -1;
+            gazeR.x *= -1;
+            _vecGazeL = gazeL;
+            _vecGazeR = gazeR;
         }
 
-        _bufferGazeR.Add(_vecGazeR);
-        if (_bufferGazeR.Count > BUFFER_CAPACITY)
-        {
-            _bufferGazeR.RemoveAt(0);
-        }
+        _ticksEye++;
     }
 
-    private static void SetForwardVector(Vector3 forwardVec)
-    {
-        _vecForward = forwardVec;
+    //private static void SetGazeVectors(Vector3 gazeL, Vector3 gazeR)
+    //{
+    //    gazeL.x *= -1;
+    //    gazeR.x *= -1;
 
-        //_bufferForward.Add(_vecGazeR);
-        _bufferForward.Add(_vecForward);
-        if (_bufferForward.Count > BUFFER_CAPACITY)
-        {
-            _bufferForward.RemoveAt(0);
-        }
-    }
+    //    _vecGazeL = gazeL;
+    //    _vecGazeR = gazeR;
 
-    struct RawGazeRays
-    {
-        public Vector3 origin;
-        public Vector3 dir;
+    //    _bufferGazeIndex = (_bufferGazeIndex + 1) % _bufferCapacity;
+    //    _bufferGazeL[_bufferGazeIndex] = _vecGazeL;
+    //    _bufferGazeR[_bufferGazeIndex] = _vecGazeR;
+    //    if (_bufferGazeSize < _bufferCapacity)
+    //    {
+    //        _bufferGazeSize++;
+    //    }
+    //}
 
-        public RawGazeRays Absolute(Transform t)
-        {
-            var ans = new RawGazeRays();
-            ans.origin = t.TransformPoint(origin);
-            ans.dir = t.TransformDirection(dir);
-            return ans;
-        }
-    }
+    //private void SetForwardVector(Vector3 forwardVec)
+    //{
+    //    _vecForward = forwardVec;
 
-    void GetGazeRays(out RawGazeRays r)
-    {
-        r = new RawGazeRays();
-        
-        SRanipal_Eye_v2.GetGazeRay(GazeIndex.COMBINE, out r.origin, out r.dir, _eyeData);
-    }
+    //    _bufferForwardIndex = (_bufferForwardIndex + 1) % _bufferCapacity;
+    //    _bufferForward[_bufferForwardIndex] = _vecForward;
+    //    if (_bufferForwardSize < _bufferCapacity)
+    //    {
+    //        _bufferForwardSize++;
+    //    }
+    //}
+
+    //void GetGazeRay(out Vector3 origin, out Vector3 direction, Transform transform)
+    //{
+    //}
 
     /// <summary>
     /// Changes the flag to indicate that one of the menu continue buttons has been clicked.
@@ -275,9 +307,27 @@ public class ModelSim : MonoBehaviour
     }
     
     // Update is called once per frame
+    // Runs at 84.5 Hz.
     void Update()
     {
-        SetForwardVector(_player.forward);
+        _frameMod = (_frameMod + 1) % ModelDownsamplingRate;
+
+        //SetForwardVector(_player.forward);
+        if (_testType != TestType.None)
+        {
+            _vecForward = _player.forward;
+
+            _bufferIndex = (_bufferIndex + 1) % _bufferCapacity;
+            _bufferGazeL[_bufferIndex] = _vecGazeL;
+            _bufferGazeR[_bufferIndex] = _vecGazeR;
+            _bufferForward[_bufferIndex] = _vecForward;
+            if (_bufferSize < _bufferCapacity)
+            {
+                _bufferSize++;
+            }
+
+            _ticksUpdate++;
+        }
 
         switch (_modelType)
         {
@@ -287,39 +337,59 @@ public class ModelSim : MonoBehaviour
             case ModelType.BaselineVector:
                 VectorBaseline();
                 break;
+            // Respect model down-sampling rate below.
             case ModelType.LSTM:
-                ModelCallLSTM();
+                if (_frameMod == 0)
+                {
+                    ModelCallLSTM();
+                }
                 break;
             case ModelType.MLP:
-                ModelCallMLP();
+                if (_frameMod == 0)
+                {
+                    ModelCallMLP();
+                }
                 break;
         }
 
-        RawGazeRays localGazeRays;
-        GetGazeRays(out localGazeRays);
-        RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
-
-        Ray gaze = new Ray(gazeRays.origin, gazeRays.dir);
+        Vector3 origin, direction;
+        //GetGazeRay(out origin, out direction, Camera.main.transform);
+        SRanipal_Eye_v2.GetGazeRay(GazeIndex.COMBINE, out origin, out direction, _eyeData);
+        origin = Camera.main.transform.TransformPoint(origin);
+        direction = Camera.main.transform.TransformDirection(direction);
+        Ray gaze = new Ray(origin, direction);
         RaycastHit hit;
-        if (_testType == TestType.SmoothLinearTest)
+        if (_testType == TestType.LinearPursuit)
         {
-            bool didHit = Physics.Raycast(gaze, out hit) && hit.transform.gameObject == TrackObjectLine;
-            TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
+            bool didHit = Physics.Raycast(gaze, out hit);
+            TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit && hit.transform.gameObject == TrackObjectLine);
         }
-        else if (_testType == TestType.SmoothArcTest)
+        else if (_testType == TestType.ArcPursuit)
         {
-            bool didHit = Physics.Raycast(gaze, out hit) && hit.transform.gameObject == TrackObjectArc;
-            TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit);
+            bool didHit = Physics.Raycast(gaze, out hit);
+            TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit && hit.transform.gameObject == TrackObjectArc);
         }
-        else if (_testType == TestType.RapidMovementTest)
+        else if (_testType == TestType.RapidMovement)
         {
+            bool didHit = Physics.Raycast(gaze, out hit);
             GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
-            if (Physics.Raycast(gaze, out hit))
+            foreach (GameObject gazeObject in gazeObjects)
             {
-                foreach (GameObject gazeObject in gazeObjects)
-                {
-                    gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(hit.transform.gameObject == gazeObject);
-                }
+                gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == gazeObject);
+            }
+        }
+        else if (_testType == TestType.RapidAvoid)
+        {
+            bool didHit = Physics.Raycast(gaze, out hit);
+            GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
+            GameObject[] avoidObjects = { AvoidObject1, AvoidObject2, AvoidObject3 };
+            foreach (GameObject gazeObject in gazeObjects)
+            {
+                gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == gazeObject);
+            }
+            foreach (GameObject avoidObject in avoidObjects)
+            {
+                avoidObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == avoidObject);
             }
         }
 
@@ -327,28 +397,6 @@ public class ModelSim : MonoBehaviour
         {
             StartCoroutine(Sequence());
             _firstFrame = false;
-        }
-    }
-
-    /// <summary>
-    /// Rotate the player object by finding vector between current forward direction and eye gaze
-    /// direction. Rotate in direction of this vector.
-    /// </summary>
-    private void VectorBaseline()
-    {
-        // Compute
-
-        float angle_boundary = 5.0f;  //boundary of eye angle
-        float rotate_speed = 4f;  //each rotate angle
-
-        // eye angle in x direction > angle_boundary : rotate the 
-        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
-
-        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
-        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
-        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
-        {
-            _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
         }
     }
 
@@ -398,113 +446,172 @@ public class ModelSim : MonoBehaviour
         }
     }
 
-    private static void ModelCallLSTM()
+    /// <summary>
+    /// Rotate the player object by finding vector between current forward direction and eye gaze
+    /// direction. Rotate in direction of this vector.
+    /// </summary>
+    private void VectorBaseline()
     {
-        for (int i = 0; i < 3; i++)
+        // Compute
+
+        // Colin Rubow: "1.767 is the average velocity proportion for the vector based controller.
+        // It means, every 1 deg further a target is, the head should move 1.767 deg/s faster."
+        float vectorVelocityProportion = 1.767f;
+
+        float angle_boundary = 5.0f;  //boundary of eye angle
+        //float rotate_speed = 4f;  //each rotate angle
+
+        // eye angle in x direction > angle_boundary : rotate the 
+        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
+
+        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
+        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
+        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
         {
-            _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
-            _tensorLSTMInput[0, 0, i+3, 0] = _vecGazeR[i];
-            _tensorLSTMInput[0, 0, i+6, 0] = _vecForward[i];
+            float rotate_speed = 0.25f * vectorVelocityProportion * angle;
+           _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
         }
-        
-        var Inputs = new Dictionary<string, Tensor>() {
+    }
+
+    private void DebugTensorAxis6(Tensor tensor, string label)
+    {
+        string s = label + ": [";
+        for (int i = 0; i < tensor.shape[6]; i++)
+        {
+            if (i > 0)
+            {
+                s += ", ";
+            }
+            s += tensor[0, 0, i, 0].ToString("0.###");
+        }
+        s += "]";
+        Debug.Log(s);
+    }
+
+    private void ModelCallLSTM()
+    {
+        if (ModelUseRelativePositions)
+        {
+            if (_bufferSize <= ModelDownsamplingRate)
+            {
+                return;
+            }
+
+            int indexPrev = (_bufferIndex - ModelDownsamplingRate + _bufferCapacity) % _bufferCapacity;
+            for (int i = 0; i < 3; i++)
+            {
+                _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i] - _bufferGazeL[indexPrev][i];
+                _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i] - _bufferGazeR[indexPrev][i];
+                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i] - _bufferForward[indexPrev][i];
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
+                _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i];
+                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
+            }
+        }
+
+        var inputs = new Dictionary<string, Tensor>() {
             {"input", _tensorLSTMInput},
             {"h0", _tensorLSTMHidden},
             {"c0", _tensorLSTMContext}
         };
+        DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
+        DebugTensorAxis6(_tensorLSTMHidden, "LSTM hidden");
+        DebugTensorAxis6(_tensorLSTMContext, "LSTM context");
 
-        _workerLSTM.Execute(Inputs);
+        _workerLSTM.Execute(inputs);
         Tensor output = _workerLSTM.PeekOutput("output");
+        DebugTensorAxis6(output, "LSTM output");
+        _tensorLSTMHidden?.Dispose();
         _tensorLSTMHidden = _workerLSTM.PeekOutput("hn");
+        _tensorLSTMContext?.Dispose();
         _tensorLSTMContext = _workerLSTM.PeekOutput("cn");
-        var new_forward = new Vector3(output[0,0,0,0]-0.05f, output[0,0,0,1], output[0,0,0,2]).normalized;
 
-        Quaternion rotation = Quaternion.LookRotation(new_forward);
+        Quaternion rotation;
+        if (ModelUseRelativePositions)
+        {
+            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]);
+            Debug.Log("delta: " + delta.ToString());
+            Debug.Log("delta.normalized: " + delta.normalized.ToString());
+            rotation = Quaternion.LookRotation(_vecForward + delta.normalized);
+            Debug.Log("rotation: " + rotation.ToString());
+        }
+        else
+        {
+            //var new_forward = new Vector3(output[0, 0, 0, 0] -0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
+            //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
+            var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
+            rotation = Quaternion.LookRotation(new_forward);
+        }
+
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 10.0f);
         }
     }
 
-    private static void ModelCallMLP()
+    private void ModelCallMLP()
     {
-        const int CONTEXT_SIZE = 3;
-        const int DATA_PER_TIMESTEP = 9;
-
-        if (_bufferGazeL.Count < CONTEXT_SIZE)
+        if (_bufferSize < _bufferCapacity)
         {
             return;
         }
 
         // Build the input vector
-        for (int c = 0; c < CONTEXT_SIZE; c++)
+        for (int w = 0; w < MLP_WINDOW_SIZE; w++)
         {
-            var ind = c * DATA_PER_TIMESTEP;
-
-            Vector3 l_c = _bufferGazeL[c];
-            Vector3 r_c = _bufferGazeR[c];
-            Vector3 f_c = _bufferForward[c];
-
-            _tensorMLPInput[0, 0, ind, 0] = l_c.x;
-            _tensorMLPInput[0, 0, ind + 1, 0] = l_c.y;
-            _tensorMLPInput[0, 0, ind + 2, 0] = l_c.z;
-            _tensorMLPInput[0, 0, ind + 3, 0] = r_c.x;
-            _tensorMLPInput[0, 0, ind + 4, 0] = r_c.y;
-            _tensorMLPInput[0, 0, ind + 5, 0] = r_c.z;
-            _tensorMLPInput[0, 0, ind + 6, 0] = f_c.x;
-            _tensorMLPInput[0, 0, ind + 7, 0] = f_c.y;
-            _tensorMLPInput[0, 0, ind + 8, 0] = f_c.z;
+            int index = (_bufferIndex + ((w - MLP_WINDOW_SIZE + 1) * ModelDownsamplingRate) + _bufferCapacity) % _bufferCapacity;
+            int windowOffset = w * INSTANCE_SIZE;
+            if (ModelUseRelativePositions)
+            {
+                int indexPrev = (index - ModelDownsamplingRate + _bufferCapacity) % _bufferCapacity;
+                for (int i = 0; i < 3; i++)
+                {
+                    _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i] - _bufferGazeL[indexPrev][i];
+                    _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i] - _bufferGazeR[indexPrev][i];
+                    _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i] - _bufferForward[indexPrev][i];
+                }
+            }
+            else
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i];
+                    _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i];
+                    _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i];
+                }
+            }
         }
-
-        //_tensorMLPInput[0, 0, 0, 0] = 0.3640442f;
-        //_tensorMLPInput[0, 0, 1, 0] = 0.2774048f;
-        //_tensorMLPInput[0, 0, 2, 0] = 0.8890991f;
-        //_tensorMLPInput[0, 0, 3, 0] = 0.3574524f;
-        //_tensorMLPInput[0, 0, 4, 0] = 0.2452698f;
-        //_tensorMLPInput[0, 0, 5, 0] = 0.9011383f;
-        //_tensorMLPInput[0, 0, 6, 0] = 0.3591461f;
-        //_tensorMLPInput[0, 0, 7, 0] = 0.2465515f;
-        //_tensorMLPInput[0, 0, 8, 0] = 0.900116f;
-        //_tensorMLPInput[0, 0, 9, 0] = 0.3615723f;
-        //_tensorMLPInput[0, 0, 10, 0] = 0.2754974f;
-        //_tensorMLPInput[0, 0, 11, 0] = 0.8907013f;
-        //_tensorMLPInput[0, 0, 12, 0] = 0.3569946f;
-        //_tensorMLPInput[0, 0, 13, 0] = 0.2446289f;
-        //_tensorMLPInput[0, 0, 14, 0] = 0.9014893f;
-        //_tensorMLPInput[0, 0, 15, 0] = 0.3574524f;
-        //_tensorMLPInput[0, 0, 16, 0] = 0.2452698f;
-        //_tensorMLPInput[0, 0, 17, 0] = 0.9011383f;
-        //_tensorMLPInput[0, 0, 18, 0] = 0.3592377f;
-        //_tensorMLPInput[0, 0, 19, 0] = 0.2737427f;
-        //_tensorMLPInput[0, 0, 20, 0] = 0.8921814f;
-        //_tensorMLPInput[0, 0, 21, 0] = 0.3565521f;
-        //_tensorMLPInput[0, 0, 22, 0] = 0.2440643f;
-        //_tensorMLPInput[0, 0, 23, 0] = 0.901825f;
-        //_tensorMLPInput[0, 0, 24, 0] = 0.3565521f;
-        //_tensorMLPInput[0, 0, 25, 0] = 0.2440643f;
-        //_tensorMLPInput[0, 0, 26, 0] = 0.901825f;
-
-        //string inputLog = "input:";
-        //for (int i = 0; i < CONTEXT_SIZE * DATA_PER_TIMESTEP; i++)
-        //{
-        //    inputLog += " " + _tensorMLPInput[0, 0, i, 0];
-        //}
-        //UnityEngine.Debug.Log(inputLog);
         var Inputs = new Dictionary<string, Tensor>() {
-            {"onnx::Gemm_0", _tensorMLPInput},
+            {_modelMLP.inputs[0].name, _tensorMLPInput},
         };
+        DebugTensorAxis6(_tensorMLPInput, "MLP input");
 
         _workerMLP.Execute(Inputs);
         string outputLayerName = _modelMLP.outputs[0];
         Tensor output = _workerMLP.PeekOutput(outputLayerName);
-        var forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]);
+        DebugTensorAxis6(output, "MLP output");
 
-        var new_forward = forward.normalized;
+        Quaternion rotation;
+        if (ModelUseRelativePositions)
+        {
+            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 1]);
+            rotation = Quaternion.LookRotation(_vecForward + delta.normalized);
+        }
+        else
+        {
+            var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
+            rotation = Quaternion.LookRotation(new_forward);
+        }
 
-        Quaternion rotation = Quaternion.LookRotation(new_forward);
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 75.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 50.0f);
         }
     }
 
@@ -543,189 +650,131 @@ public class ModelSim : MonoBehaviour
             "Using the trigger button of the controller, press continue.";
         yield return StartCoroutine(DisplayBreakMenu());
 
-        /* LINEAR PURSUIT START */
-
-        BreakMessage.text =
+        TestType[] testTypes = new TestType[]
+        {
+            TestType.LinearPursuit,
+            TestType.ArcPursuit,
+            TestType.RapidMovement,
+            TestType.RapidAvoid,
+        };
+        GameObject[][] testObjects = new GameObject[][]
+        {
+            new GameObject[] { TrackObjectLine },
+            new GameObject[] { TrackObjectArc },
+            new GameObject[] { GazeObject1, GazeObject2, GazeObject3 },
+            new GameObject[] { GazeObject1, GazeObject2, GazeObject3, AvoidObject1, AvoidObject2, AvoidObject3 },
+        };
+        string[] testTitles = new string[]
+        {
+            "Linear Pursuit",
+            "Arc Pursuit",
+            "Rapid Movement",
+            "Rapid Avoid",
+        };
+        string[] testExplanations = new string[]
+        {
             "LINEAR PURSUIT\n" +
             "\n" +
             "Follow the floating cube. It will move around in straight lines.\n" +
-            "Look directly at the cube to change its color.\n" +
-            "\n" +
-            "When you are ready to begin the Linear Pursuit section of the test, press continue.";
-        yield return StartCoroutine(DisplayBreakMenu());
-        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-        _modelType = ModelType.None;
-        yield return StartCoroutine(LinearPursuit(false));
+            "Look directly at the cube to change its color.",
 
-        for (int i = 0; i < TRIAL_COUNT; i++)
-        {
-            string qualifier = (i == 0) ? "an" : "a different";
-            if (i == 0)
-            {
-                BreakMessage.text =
-                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
-                    " to your head movements.\n" +
-                    "\n" +
-                    "You may freely move your head.\n" +
-                    "\n" +
-                    "To start Linear Pursuit with assistance, press continue.";
-            }
-            else
-            {
-                BreakMessage.text =
-                    "In this trial, you will NOT be able to move your head to look around.\n" +
-                    " Our assistive technology will move the view based on your eye movements.\n" +
-                    " We recommend keeping your head level and still. Move only your eyes.\n" +
-                    "\n" +
-                    "When you are ready to start Linear Pursuit\n" +
-                    " using only your eyes, press continue.";
-            }
-            yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[0]][i];
-            yield return StartCoroutine(LinearPursuit(true));
-            _modelType = ModelType.None;
-        }
-
-        BreakMessage.text =
-            "Linear Pursuit Test Complete!";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        /* LINEAR PURSUIT END - ARC PURSUIT START */
-
-        BreakMessage.text =
             "ARC PURSUIT\n" +
             "\n" +
             "Follow the floating cube. It will move around in curved paths.\n" +
-            "Look directly at the cube to change its color.\n" +
-            "\n" +
-            "You may move your head to look around.\n" +
-            "\n" +
-            "When you are ready to begin the Arc Pursuit section of the test, press continue.";
-        yield return StartCoroutine(DisplayBreakMenu());
-        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-        _modelType = ModelType.None;
-        yield return StartCoroutine(ArcPursuit(false));
+            "Look directly at the cube to change its color.",
 
-        for (int i = 0; i < TRIAL_COUNT; i++)
-        {
-            string qualifier = (i == 0) ? "an" : "a different";
-            if (i == 0)
-            {
-                BreakMessage.text =
-                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
-                    " to your head movements.\n" +
-                    "\n" +
-                    "You may freely move your head.\n" +
-                    "\n" +
-                    "To start Arc Pursuit with assistance, press continue.";
-            }
-            else
-            {
-                BreakMessage.text =
-                    "In this trial, you will NOT be able to move your head to look around.\n" +
-                    " Our assistive technology will move the view based on your eye movements.\n" +
-                    " We recommend keeping your head level and still. Move only your eyes.\n" +
-                    "\n" +
-                    "When you are ready to start Arc Pursuit\n" +
-                    " using only your eyes, press continue.";
-            }
-            yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[1]][i];
-            yield return StartCoroutine(ArcPursuit(true));
-            _modelType = ModelType.None;
-        }
-
-        BreakMessage.text =
-            "Arc Pursuit Test Complete!";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        /* ARC PURSUIT END - RAPID MOVEMENT START */
-
-        BreakMessage.text =
             "RAPID MOVEMENT\n" +
             "\n" +
-            "For the Rapid Movement section of the test, three cubes will spawn in\n" +
-            "various locations in front of you and will begin to move towards you.\n" +
-            "Look directly at the cubes to reset them before they reach you.\n" +
-            "\n" +
-            "You may move your head to look around.\n" +
-            "\n" +
-            "This test will last for " + SECONDS_TRIAL + " seconds.\n" +
-            "Press continue when you are ready to begin.";
-        yield return StartCoroutine(DisplayBreakMenu());
-        yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-        _modelType = ModelType.None;
-        yield return StartCoroutine(RapidMovementTest(false));
+            "Three cubes will spawn in front of you and will move towards you.\n" +
+            "Look directly at the cubes to reset them before they reach you.",
 
-        for (int i = 0; i < TRIAL_COUNT; i++)
+            "RAPID AVOID\n" +
+            "\n" +
+            "Exactly like Rapid Movement, with the addition of three\n" +
+            " yellow DISTRACTOR CUBES.\n" +
+            "The yellow cubes CANNOT BE RESET.",
+        };
+
+        for (int i = 0; i < TEST_COUNT - 1; i++)
         {
-            string qualifier = (i == 0) ? "an" : "a different";
-            if (i == 0)
+            if (i > 0)
             {
-                BreakMessage.text =
-                    "We will now add " + qualifier + " eye-tracking assistive technology\n" +
-                    " to your head movements.\n" +
-                    "\n" +
-                    "You may freely move your head.\n" +
-                    "\n" +
-                    "To start Rapid Movement with assistance, press continue.";
+                BreakMessage.text = "" + testTitles[i - 1] + " complete!";
+                yield return StartCoroutine(DisplayBreakMenu());
             }
-            else
+
+            string explanation = "" + testExplanations[i];
+            if (i > 0)
+            {
+                explanation += "\n\nYou may move your head to look around.";
+            }
+            explanation += "\n\nWhen you are ready to start " + testTitles[i] + ", press continue.";
+            BreakMessage.text = explanation;
+            yield return StartCoroutine(DisplayBreakMenu());
+            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+            _modelType = ModelType.None;
+            yield return StartCoroutine(TrialStart(testTypes[i], false, testObjects[i]));
+
+            for (int j = 0; j < TRIAL_COUNT; j++)
             {
                 BreakMessage.text =
                     "In this trial, you will NOT be able to move your head to look around.\n" +
                     " Our assistive technology will move the view based on your eye movements.\n" +
                     " We recommend keeping your head level and still. Move only your eyes.\n" +
                     "\n" +
-                    "When you are ready to start Rapid Movement\n" +
+                    "When you are ready to start " + testTitles[i] + "\n" +
                     " using only your eyes, press continue.";
+                yield return StartCoroutine(DisplayBreakMenu());
+                yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
+                _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[i]][j];
+                yield return StartCoroutine(TrialStart(testTypes[i], true, testObjects[i]));
+                _modelType = ModelType.None;
             }
-            yield return StartCoroutine(DisplayBreakMenu());
-            yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[2]][i];
-            yield return StartCoroutine(RapidMovementTest(true));
-            _modelType = ModelType.None;
         }
 
-        BreakMessage.text =
-            "All tests Complete!\n" +
-            "\n" +
-            "Press continue to try the assistive technology in a different environment.";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        /* RAPID MOVEMENT END - CITY SCENE START */
-
-        AsyncOperation loadCity = SceneManager.LoadSceneAsync("CityScene", LoadSceneMode.Additive);
-        while (!loadCity.isDone)
-        {
-            yield return null;
-        }
-        //_player.position = new Vector3(-166.8f, 6.22f, -424.8f); // Sidewalk corner under street light.
-
-        BreakMessage.text =
-            "Now, feel free to look around this city environment.\n" +
-            "\n" +
-            "Press continue when you're ready to move on.";
-        yield return StartCoroutine(DisplayBreakMenu());
-
-        for (int i = 0; i < TRIAL_COUNT; i++)
+        if (ENABLE_CITY_SCENE)
         {
             BreakMessage.text =
-                "Using only your eyes, look around this scene\n" +
-                " using our assistive technology.\n" +
+                "All tests Complete!\n" +
                 "\n" +
-                "To begin looking with only your eyes, press continue.";
+                "Press continue to try the assistive technology in a different environment.";
             yield return StartCoroutine(DisplayBreakMenu());
-            _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[3]][i];
-            // TODO: Spawn player randomly in one of a set of "good" starting positions.
-            yield return StartCoroutine(NoObjectiveTest(true));
-            // TODO: Return player to street light.
-            _modelType = ModelType.None;
+
+            /* RAPID AVOID END - CITY SCENE START */
+
+            AsyncOperation loadCity = SceneManager.LoadSceneAsync("CityScene", LoadSceneMode.Additive);
+            while (!loadCity.isDone)
+            {
+                yield return null;
+            }
+
+            BreakMessage.text =
+                "Now, feel free to look around this city environment.\n" +
+                "\n" +
+                "Press continue when you're ready to move on.";
+            yield return StartCoroutine(DisplayBreakMenu());
+
+            for (int j = 0; j < TRIAL_COUNT; j++)
+            {
+                BreakMessage.text =
+                    "Using only your eyes, look at anything in this scene\n" +
+                    " using our assistive technology.\n" +
+                    "\n" +
+                    "To begin looking with only your eyes, press continue.";
+                yield return StartCoroutine(DisplayBreakMenu());
+                _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[4]][j];
+                // TODO: Spawn player randomly in one of a set of "good" starting positions.
+                yield return StartCoroutine(TrialStart(TestType.None, true, new GameObject[] { }));
+                // TODO: Return player to street light.
+                //_player.position = new Vector3(-166.8f, 6.22f, -424.8f); // Sidewalk corner under street light.
+                _modelType = ModelType.None;
+            }
         }
 
-        BreakMessage.text = "That concludes the study.\n\nThank you!";
+        BreakMessage.text =
+            "That concludes the study.\n" +
+            "\n" +
+            "Thank you!";
         yield return StartCoroutine(DisplayBreakMenu());
     }
 
@@ -767,89 +816,64 @@ public class ModelSim : MonoBehaviour
         CountdownCanvas.gameObject.SetActive(false);
     }
 
-    private IEnumerator LinearPursuit(bool disableHead)
+    private IEnumerator TrialStart(TestType testType, bool disableHead, GameObject[] gameObjects)
     {
-        TrackObjectLine.SetActive(true);
-        _testType = TestType.SmoothLinearTest;
-        IEnumerator trial = TrialStart(disableHead);
-        while (trial.MoveNext())
+        _ticksEye = 0;
+        _ticksUpdate = 0;
+        _ticksSequence = 0;
+        foreach (GameObject gameObject in gameObjects)
         {
-            yield return trial.Current;
+            gameObject.SetActive(true);
         }
-        TrackObjectLine.SetActive(false);
-    }
-
-    private IEnumerator ArcPursuit(bool disableHead)
-    {
-        TrackObjectArc.SetActive(true);
-        _testType = TestType.SmoothArcTest;
-        IEnumerator trial = TrialStart(disableHead);
-        while (trial.MoveNext())
-        {
-            yield return trial.Current;
-        }
-        TrackObjectArc.SetActive(false);
-    }
-
-    private IEnumerator RapidMovementTest(bool disableHead)
-    {
-        GazeObject1.SetActive(true);
-        GazeObject2.SetActive(true);
-        GazeObject3.SetActive(true);
-        _testType = TestType.RapidMovementTest;
-        IEnumerator trial = TrialStart(disableHead);
-        while (trial.MoveNext())
-        {
-            yield return trial.Current;
-        }
-        GazeObject1.SetActive(false);
-        GazeObject2.SetActive(false);
-        GazeObject3.SetActive(false);
-    }
-
-    private IEnumerator NoObjectiveTest(bool disableHead)
-    {
-        _testType = TestType.None;
-        IEnumerator trial = TrialStart(disableHead);
-        while (trial.MoveNext())
-        {
-            yield return trial.Current;
-        }
-    }
-
-    private IEnumerator TrialStart(bool disableHead)
-    {
+        _testType = testType;
         DisableHeadTracking.Disable = disableHead;
         ResetModel();
-        Invoke(nameof(Measurement), 0f);
+        Invoke(nameof(EyeTrackerMeasurement), 0f);
+
         float gameTime = Time.time;
         while (Time.time - gameTime < SECONDS_TRIAL)
         {
+            _ticksSequence++;
             yield return null;
+        }
+
+        Debug.Log("SECONDS_TRIAL: " + SECONDS_TRIAL);
+        Debug.Log("_ticksEye: " + _ticksEye);
+        Debug.Log("_ticksUpdate: " + _ticksUpdate);
+        Debug.Log("_ticksSequence: " + _ticksSequence);
+        foreach (GameObject gameObject in gameObjects)
+        {
+            gameObject.SetActive(false);
         }
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
         ResetHead();
-        Release();
+        EyeTrackerRelease();
     }
 
     private void ResetModel()
     {
-        _tensorLSTMHidden.Dispose();
-        _tensorLSTMContext.Dispose();
-        _tensorLSTMInput.Dispose();
+        _workerLSTM?.Dispose();
+        _tensorLSTMInput?.Dispose();
+        _tensorLSTMHidden?.Dispose();
+        _tensorLSTMContext?.Dispose();
+        _tensorLSTMHidden = null;
+        _tensorLSTMContext = null;
         _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
-        _tensorLSTMHidden = new Tensor(1, 1, 9, 1);
-        _tensorLSTMContext = new Tensor(1, 1, 9, 1);
-        _tensorLSTMInput = new Tensor(1, 1, 9, 1);
-        for (int i = 0; i < 9; i++)
+        _tensorLSTMInput = new Tensor(1, 1, INSTANCE_SIZE, 1, "LSTMInput");
+        _tensorLSTMHidden = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMHidden");
+        _tensorLSTMContext = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMContext");
+        for (int i = 0; i < _modelLSTMHiddenSize; i++)
         {
             _tensorLSTMHidden[0, 0, i, 0] = 0;
             _tensorLSTMContext[0, 0, i, 0] = 0;
         }
 
-        _tensorMLPInput.Dispose();
+        _workerMLP?.Dispose();
+        _tensorMLPInput?.Dispose();
         _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
-        _tensorMLPInput = new Tensor(1, 1, 27, 1);
+        _tensorMLPInput = new Tensor(1, 1, MLP_WINDOW_SIZE * INSTANCE_SIZE, 1);
+        
+        _bufferSize = 0;
     }
 }
