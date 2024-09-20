@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -36,12 +37,17 @@ public class ModelSim : MonoBehaviour
 
     private static ModelSim _instance; // Used with static eye tracker callback, `GazeCallbackStatic`.
 
-    private const int TEST_COUNT = (ENABLE_CITY_SCENE) ? 5 : 4;
+    private const int TEST_COUNT = 4;
     private const int TRIAL_COUNT = 3;
 
-    private int _playerID;
+    private Transform _camera;
     private Transform _player;
     private Quaternion _playerRotationStart;
+
+    private int _userID;
+    private string _pathUser;
+    private List<Vector3> _streamGazeL, _streamGazeR, _streamForward;
+    private List<Quaternion> _streamCamera;
 
     private ModelType _modelType;
     private static readonly ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
@@ -53,14 +59,17 @@ public class ModelSim : MonoBehaviour
         new ModelType[] { ModelType.MLP, ModelType.BaselineVector, ModelType.LSTM },
         new ModelType[] { ModelType.MLP, ModelType.LSTM, ModelType.BaselineVector }
     };
-    public int SeedModelTypeOrdering;
-    private List<int> _modelTypeOrderingIndices = new List<int>();
+    private readonly List<int> _modelTypeOrderingIndices = new List<int>();
+
+    private TestType _testType = TestType.None;
+    private readonly List<int> _testSeeds = new List<int>();
 
     public int ModelDownsamplingRate;
     private int _frameMod = 0; // Used with `DownsamplingRate` to perform inference only on each n-th frame.
     public bool ModelUseRelativePositions;
+    public bool ModelDropHeadInput;
 
-    private const int INSTANCE_SIZE = 9;
+    private int _inputLength = 9;
 
     public NNModel ModelAssetLSTM;
     private Model _modelLSTM;
@@ -88,16 +97,16 @@ public class ModelSim : MonoBehaviour
     public TextMesh BreakMessage, CountdownMessage;
     private bool _continueClicked = false;
 
+    private readonly List<int> _scores;
+    private readonly List<int> _scoresPossible;
+    private int _score;
+    private int _scorePossible;
+
     //private EyeParameter _eyeParameter = new EyeParameter();
     private EyeData_v2 _eyeData = new EyeData_v2();
     private bool _eyeCallbackRegistered = false;
 
     private bool _firstFrame = true;
-    private TestType _testType = TestType.None;
-
-    private int _ticksEye = 0;
-    private int _ticksUpdate = 0;
-    private int _ticksSequence = 0;
 
     private const int SECONDS_TRIAL = 10;
     private const int SECONDS_COUNTDOWN = 5;
@@ -109,6 +118,30 @@ public class ModelSim : MonoBehaviour
     {
         _instance = this;
 
+        string pathUsers = Path.Combine("Data", "Sim", "users.csv");
+        string[] linesUsers = File.ReadAllLines(pathUsers);
+        _userID = linesUsers.Length - 1; // Auto-increment.
+
+        System.Random rng = new System.Random(_userID);
+        string lineUser = "" + _userID + "," + SECONDS_TRIAL;
+        for (int i = 0; i < TEST_COUNT + 1; i++)
+        {
+            int seed = rng.Next() % 65536;
+            _testSeeds.Add(seed);
+            lineUser += "," + seed.ToString();
+
+            int index = DEBUG ? 0 : rng.Next() % MODEL_TYPE_ORDERINGS.Length;
+            _modelTypeOrderingIndices.Add(index);
+            for (int j = 0; j < 3; j++)
+            {
+                lineUser += "," + MODEL_TYPE_ORDERINGS[index][j].ToString();
+            }
+        }
+        lineUser += "\r\n";
+        File.AppendAllText(pathUsers, lineUser);
+        _pathUser = Path.Combine("Data", "Sim", "User" + _userID);
+        Directory.CreateDirectory(_pathUser);
+
         Invoke(nameof(EyeTrackerSystemCheck), 0.5f);
         if (DoCalibrateAtStart)
         {
@@ -116,28 +149,13 @@ public class ModelSim : MonoBehaviour
         }
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
 
+        _camera = Camera.main.transform;
         _player = Camera.main.transform.parent.parent;
         _playerRotationStart = _player.rotation;
 
         _modelType = ModelType.None;
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
-
-        UnityEngine.Random.InitState(31);
-
-        System.Random rng = new System.Random(SeedModelTypeOrdering);
-        for (int i = 0; i < TEST_COUNT; i++)
-        {
-            if (DEBUG)
-            {
-                _modelTypeOrderingIndices.Add(0);
-            }
-            else
-            {
-                _modelTypeOrderingIndices.Add(rng.Next() % MODEL_TYPE_ORDERINGS.Length);
-            }
-        }
-        UnityEngine.Debug.Log("orderingIndices: " + _modelTypeOrderingIndices); // TODO: Persist to .csv.
 
         _modelLSTM = ModelLoader.Load(ModelAssetLSTM, true);
         _modelLSTMHiddenSize = _modelLSTM.inputs[1].shape[6];
@@ -156,6 +174,11 @@ public class ModelSim : MonoBehaviour
         _bufferGazeL = new Vector3[_bufferCapacity];
         _bufferGazeR = new Vector3[_bufferCapacity];
         _bufferForward = new Vector3[_bufferCapacity];
+
+        if (ModelDropHeadInput)
+        {
+            _inputLength -= 3;
+        }
 
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
@@ -177,11 +200,6 @@ public class ModelSim : MonoBehaviour
             UnityEngine.Debug.Log("Device is working properly.");
         }
 
-        //if (SRanipal_Eye_API.GetEyeParameter(ref _eyeParameter) == ViveSR.Error.WORK)
-        //{
-        //    UnityEngine.Debug.Log("Eye parameters are measured.");
-        //}
-
         Error result_eye_init = SRanipal_API.Initial(SRanipal_Eye_v2.ANIPAL_TYPE_EYE_V2, IntPtr.Zero);
 
         if (result_eye_init == Error.WORK)
@@ -197,9 +215,6 @@ public class ModelSim : MonoBehaviour
 
     void EyeTrackerMeasurement()
     {
-        //EyeParameter eye_parameter = new EyeParameter();
-        //SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
-
         if (SRanipal_Eye_Framework.Status != SRanipal_Eye_Framework.FrameworkStatus.WORKING)
         {
             UnityEngine.Debug.Log("Not working");
@@ -246,8 +261,6 @@ public class ModelSim : MonoBehaviour
     /// <param name="eye_data"></param>
     private void GazeCallback(EyeData_v2 eye_data)
     {
-        //EyeParameter eye_parameter = new EyeParameter();
-        //SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
         _eyeData = eye_data;
 
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref _eyeData);
@@ -261,8 +274,6 @@ public class ModelSim : MonoBehaviour
             _vecGazeL = gazeL;
             _vecGazeR = gazeR;
         }
-
-        _ticksEye++;
     }
 
     //private static void SetGazeVectors(Vector3 gazeL, Vector3 gazeR)
@@ -306,8 +317,8 @@ public class ModelSim : MonoBehaviour
         _continueClicked = true;
     }
     
-    // Update is called once per frame
-    // Runs at 84.5 Hz.
+    // Update is called once per frame.
+    // Runs at 90Hz without inference; ~45Hz with LSTM; ~85Hz with MLP.
     void Update()
     {
         _frameMod = (_frameMod + 1) % ModelDownsamplingRate;
@@ -326,7 +337,10 @@ public class ModelSim : MonoBehaviour
                 _bufferSize++;
             }
 
-            _ticksUpdate++;
+            _streamGazeL.Add(_vecGazeL);
+            _streamGazeR.Add(_vecGazeR);
+            _streamForward.Add(_vecForward);
+            _streamCamera.Add(_camera.localRotation);
         }
 
         switch (_modelType)
@@ -361,13 +375,25 @@ public class ModelSim : MonoBehaviour
         RaycastHit hit;
         if (_testType == TestType.LinearPursuit)
         {
+            _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
-            TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit && hit.transform.gameObject == TrackObjectLine);
+            didHit = didHit && hit.transform.gameObject == TrackObjectArc;
+            TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
+            if (didHit)
+            {
+                _score++;
+            }
         }
         else if (_testType == TestType.ArcPursuit)
         {
+            _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
-            TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit && hit.transform.gameObject == TrackObjectArc);
+            didHit = didHit && hit.transform.gameObject == TrackObjectArc;
+            TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(didHit);
+            if (didHit)
+            {
+                _score++;
+            }
         }
         else if (_testType == TestType.RapidMovement)
         {
@@ -389,7 +415,7 @@ public class ModelSim : MonoBehaviour
             }
             foreach (GameObject avoidObject in avoidObjects)
             {
-                avoidObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == avoidObject);
+                avoidObject.GetComponent<AvoidObstacleTest>().GazeFocusChanged(didHit && hit.transform.gameObject == avoidObject);
             }
         }
 
@@ -502,7 +528,10 @@ public class ModelSim : MonoBehaviour
             {
                 _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i] - _bufferGazeL[indexPrev][i];
                 _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i] - _bufferGazeR[indexPrev][i];
-                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i] - _bufferForward[indexPrev][i];
+                if (!ModelDropHeadInput)
+                {
+                    _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i] - _bufferForward[indexPrev][i];
+                }
             }
         }
         else
@@ -511,7 +540,10 @@ public class ModelSim : MonoBehaviour
             {
                 _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
                 _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i];
-                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
+                if (!ModelDropHeadInput)
+                {
+                    _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
+                }
             }
         }
 
@@ -520,13 +552,13 @@ public class ModelSim : MonoBehaviour
             {"h0", _tensorLSTMHidden},
             {"c0", _tensorLSTMContext}
         };
-        DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
-        DebugTensorAxis6(_tensorLSTMHidden, "LSTM hidden");
-        DebugTensorAxis6(_tensorLSTMContext, "LSTM context");
+        //DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
+        //DebugTensorAxis6(_tensorLSTMHidden, "LSTM hidden");
+        //DebugTensorAxis6(_tensorLSTMContext, "LSTM context");
 
         _workerLSTM.Execute(inputs);
         Tensor output = _workerLSTM.PeekOutput("output");
-        DebugTensorAxis6(output, "LSTM output");
+        //DebugTensorAxis6(output, "LSTM output");
         _tensorLSTMHidden?.Dispose();
         _tensorLSTMHidden = _workerLSTM.PeekOutput("hn");
         _tensorLSTMContext?.Dispose();
@@ -536,14 +568,14 @@ public class ModelSim : MonoBehaviour
         if (ModelUseRelativePositions)
         {
             var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]);
-            Debug.Log("delta: " + delta.ToString());
-            Debug.Log("delta.normalized: " + delta.normalized.ToString());
+            //Debug.Log("delta: " + delta.ToString());
+            //Debug.Log("delta.normalized: " + delta.normalized.ToString());
             rotation = Quaternion.LookRotation(_vecForward + delta.normalized);
-            Debug.Log("rotation: " + rotation.ToString());
+            //Debug.Log("rotation: " + rotation.ToString());
         }
         else
         {
-            //var new_forward = new Vector3(output[0, 0, 0, 0] -0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
+            //var new_forward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
             //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
             var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
             rotation = Quaternion.LookRotation(new_forward);
@@ -551,7 +583,7 @@ public class ModelSim : MonoBehaviour
 
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 10.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f);
         }
     }
 
@@ -566,7 +598,7 @@ public class ModelSim : MonoBehaviour
         for (int w = 0; w < MLP_WINDOW_SIZE; w++)
         {
             int index = (_bufferIndex + ((w - MLP_WINDOW_SIZE + 1) * ModelDownsamplingRate) + _bufferCapacity) % _bufferCapacity;
-            int windowOffset = w * INSTANCE_SIZE;
+            int windowOffset = w * _inputLength;
             if (ModelUseRelativePositions)
             {
                 int indexPrev = (index - ModelDownsamplingRate + _bufferCapacity) % _bufferCapacity;
@@ -574,7 +606,10 @@ public class ModelSim : MonoBehaviour
                 {
                     _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i] - _bufferGazeL[indexPrev][i];
                     _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i] - _bufferGazeR[indexPrev][i];
-                    _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i] - _bufferForward[indexPrev][i];
+                    if (!ModelDropHeadInput)
+                    {
+                        _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i] - _bufferForward[indexPrev][i];
+                    }
                 }
             }
             else
@@ -583,19 +618,22 @@ public class ModelSim : MonoBehaviour
                 {
                     _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i];
                     _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i];
-                    _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i];
+                    if (!ModelDropHeadInput)
+                    {
+                        _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i];
+                    }
                 }
             }
         }
         var Inputs = new Dictionary<string, Tensor>() {
             {_modelMLP.inputs[0].name, _tensorMLPInput},
         };
-        DebugTensorAxis6(_tensorMLPInput, "MLP input");
+        //DebugTensorAxis6(_tensorMLPInput, "MLP input");
 
         _workerMLP.Execute(Inputs);
         string outputLayerName = _modelMLP.outputs[0];
         Tensor output = _workerMLP.PeekOutput(outputLayerName);
-        DebugTensorAxis6(output, "MLP output");
+        //DebugTensorAxis6(output, "MLP output");
 
         Quaternion rotation;
         if (ModelUseRelativePositions)
@@ -611,8 +649,34 @@ public class ModelSim : MonoBehaviour
 
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 50.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 2.0f);
         }
+    }
+
+    private void ResetModel()
+    {
+        _workerLSTM?.Dispose();
+        _tensorLSTMInput?.Dispose();
+        _tensorLSTMHidden?.Dispose();
+        _tensorLSTMContext?.Dispose();
+        _tensorLSTMHidden = null;
+        _tensorLSTMContext = null;
+        _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.ComputePrecompiled, _modelLSTM);
+        _tensorLSTMInput = new Tensor(1, 1, _inputLength, 1, "LSTMInput");
+        _tensorLSTMHidden = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMHidden");
+        _tensorLSTMContext = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMContext");
+        for (int i = 0; i < _modelLSTMHiddenSize; i++)
+        {
+            _tensorLSTMHidden[0, 0, i, 0] = 0;
+            _tensorLSTMContext[0, 0, i, 0] = 0;
+        }
+
+        _workerMLP?.Dispose();
+        _tensorMLPInput?.Dispose();
+        _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.ComputePrecompiled, _modelMLP);
+        _tensorMLPInput = new Tensor(1, 1, MLP_WINDOW_SIZE * _inputLength, 1);
+
+        _bufferSize = 0;
     }
 
     private void ResetHead()
@@ -695,7 +759,7 @@ public class ModelSim : MonoBehaviour
             "The yellow cubes CANNOT BE RESET.",
         };
 
-        for (int i = 0; i < TEST_COUNT - 1; i++)
+        for (int i = 0; i < TEST_COUNT; i++)
         {
             if (i > 0)
             {
@@ -712,8 +776,7 @@ public class ModelSim : MonoBehaviour
             BreakMessage.text = explanation;
             yield return StartCoroutine(DisplayBreakMenu());
             yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-            _modelType = ModelType.None;
-            yield return StartCoroutine(TrialStart(testTypes[i], false, testObjects[i]));
+            yield return StartCoroutine(TrialStart(i, 0, testTypes[i], false, testObjects[i]));
 
             for (int j = 0; j < TRIAL_COUNT; j++)
             {
@@ -726,8 +789,7 @@ public class ModelSim : MonoBehaviour
                     " using only your eyes, press continue.";
                 yield return StartCoroutine(DisplayBreakMenu());
                 yield return StartCoroutine(DisplayCountdown(SECONDS_COUNTDOWN, ""));
-                _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[i]][j];
-                yield return StartCoroutine(TrialStart(testTypes[i], true, testObjects[i]));
+                yield return StartCoroutine(TrialStart(i, j + 1, testTypes[i], true, testObjects[i]));
                 _modelType = ModelType.None;
             }
         }
@@ -762,14 +824,23 @@ public class ModelSim : MonoBehaviour
                     "\n" +
                     "To begin looking with only your eyes, press continue.";
                 yield return StartCoroutine(DisplayBreakMenu());
-                _modelType = MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[4]][j];
                 // TODO: Spawn player randomly in one of a set of "good" starting positions.
-                yield return StartCoroutine(TrialStart(TestType.None, true, new GameObject[] { }));
+                yield return StartCoroutine(TrialStart(TEST_COUNT, j + 1, TestType.None, true, new GameObject[] { }));
                 // TODO: Return player to street light.
                 //_player.position = new Vector3(-166.8f, 6.22f, -424.8f); // Sidewalk corner under street light.
-                _modelType = ModelType.None;
             }
         }
+
+        // Persist scores.
+        string pathUsers = Path.Combine("Data", "Sim", "scores.csv");
+        string lineScore = "" + _userID;
+        for (int i = 0; i < _scores.Count; i++)
+        {
+            lineScore += "," + _scores[i].ToString();
+            lineScore += "," + _scoresPossible[i].ToString();
+        }
+        lineScore += "\r\n";
+        File.AppendAllText(pathUsers, lineScore);
 
         BreakMessage.text =
             "That concludes the study.\n" +
@@ -816,15 +887,26 @@ public class ModelSim : MonoBehaviour
         CountdownCanvas.gameObject.SetActive(false);
     }
 
-    private IEnumerator TrialStart(TestType testType, bool disableHead, GameObject[] gameObjects)
+    private IEnumerator TrialStart(int testIndex, int trialIndex, TestType testType, bool disableHead, GameObject[] gameObjects)
     {
-        _ticksEye = 0;
-        _ticksUpdate = 0;
-        _ticksSequence = 0;
+        _streamGazeL = new List<Vector3>();
+        _streamGazeR = new List<Vector3>();
+        _streamForward = new List<Vector3>();
+        _streamCamera = new List<Quaternion>();
+
+        HighlightAtGaze.Score = 0;
+        HighlightAtGaze.ScorePossible = 0;
+        _score = 0;
+        _scorePossible = 0;
+        if (trialIndex > 0)
+        {
+            UnityEngine.Random.InitState(_testSeeds[testIndex]); // Make trials equivalent within the same task.
+        }
         foreach (GameObject gameObject in gameObjects)
         {
             gameObject.SetActive(true);
         }
+        _modelType = (trialIndex == 0) ? ModelType.None : MODEL_TYPE_ORDERINGS[_modelTypeOrderingIndices[testIndex]][trialIndex - 1];
         _testType = testType;
         DisableHeadTracking.Disable = disableHead;
         ResetModel();
@@ -833,47 +915,39 @@ public class ModelSim : MonoBehaviour
         float gameTime = Time.time;
         while (Time.time - gameTime < SECONDS_TRIAL)
         {
-            _ticksSequence++;
             yield return null;
         }
 
-        Debug.Log("SECONDS_TRIAL: " + SECONDS_TRIAL);
-        Debug.Log("_ticksEye: " + _ticksEye);
-        Debug.Log("_ticksUpdate: " + _ticksUpdate);
-        Debug.Log("_ticksSequence: " + _ticksSequence);
+        if (_testType == TestType.RapidMovement || _testType == TestType.RapidAvoid)
+        {
+            _score = HighlightAtGaze.Score;
+            _scorePossible = HighlightAtGaze.ScorePossible;
+        }
+        _scores.Add(_score);
+        _scoresPossible.Add(_scorePossible);
+        string pathData = Path.Combine(_pathUser, "Trial" + testIndex + "_" + trialIndex + ".csv");
+        File.WriteAllText(pathData, "eye_l_x,eye_l_y,eye_l_z,eye_r_x,eye_r_y,eye_r_z,head_x,head_y,head_z,camera_w,camera_x,camera_y,camera_z\r\n");
+        for (int i = 0; i < _streamGazeL.Count; i++)
+        {
+            Vector3 eyeL = _streamGazeL[i];
+            Vector3 eyeR = _streamGazeR[i];
+            Vector3 head = _streamForward[i];
+            Quaternion cameraQ = _streamCamera[i];
+            string s = "" + eyeL.x + "," + eyeL.y + "," + eyeL.z +
+                "," + eyeR.x + "," + eyeR.y + "," + eyeR.z +
+                "," + head.x + "," + head.y + "," + head.z +
+                "," + cameraQ.w + "," + cameraQ.x + "," + cameraQ.y + "," + cameraQ.z + "\r\n";
+            File.AppendAllText(pathData, s);
+        }
+
         foreach (GameObject gameObject in gameObjects)
         {
             gameObject.SetActive(false);
         }
+        _modelType = ModelType.None;
         _testType = TestType.None;
         DisableHeadTracking.Disable = false;
         ResetHead();
         EyeTrackerRelease();
-    }
-
-    private void ResetModel()
-    {
-        _workerLSTM?.Dispose();
-        _tensorLSTMInput?.Dispose();
-        _tensorLSTMHidden?.Dispose();
-        _tensorLSTMContext?.Dispose();
-        _tensorLSTMHidden = null;
-        _tensorLSTMContext = null;
-        _workerLSTM = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelLSTM);
-        _tensorLSTMInput = new Tensor(1, 1, INSTANCE_SIZE, 1, "LSTMInput");
-        _tensorLSTMHidden = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMHidden");
-        _tensorLSTMContext = new Tensor(1, 1, _modelLSTMHiddenSize, 1, "LSTMContext");
-        for (int i = 0; i < _modelLSTMHiddenSize; i++)
-        {
-            _tensorLSTMHidden[0, 0, i, 0] = 0;
-            _tensorLSTMContext[0, 0, i, 0] = 0;
-        }
-
-        _workerMLP?.Dispose();
-        _tensorMLPInput?.Dispose();
-        _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.Compute, _modelMLP);
-        _tensorMLPInput = new Tensor(1, 1, MLP_WINDOW_SIZE * INSTANCE_SIZE, 1);
-        
-        _bufferSize = 0;
     }
 }

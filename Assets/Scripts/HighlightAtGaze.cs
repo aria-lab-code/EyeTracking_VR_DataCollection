@@ -24,6 +24,9 @@ public class HighlightAtGaze : MonoBehaviour
     private float startTime;
     private bool init = true;
 
+    public static int Score = 0;
+    public static int ScorePossible = 0;
+
     //The method of the "IGazeFocusable" interface, which will be called when this object receives or loses focus
     public void GazeFocusChanged(bool hasFocus)
     {
@@ -59,10 +62,12 @@ public class HighlightAtGaze : MonoBehaviour
         if (focused)
         {
             GazeCollection2.score++; // TODO: That's kinda janky, but w/e.
+            Score++; // Should be a callback. Oh well.
         }
         focused = false;
         _renderer = GetComponent<Renderer>();
         GazeCollection2.total_score++;
+        ScorePossible++;
 
         if (init)
         {

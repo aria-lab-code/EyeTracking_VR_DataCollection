@@ -2577,11 +2577,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4937e31b6ccd7b44694b1e647be389ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  SeedModelTypeOrdering: 0
   ModelDownsamplingRate: 1
-  ModelUseRelativePositions: 0
-  ModelAssetLSTM: {fileID: 5022602860645237092, guid: b2c995add8a0f074f97c3658260ed7c0, type: 3}
-  ModelAssetMLP: {fileID: 5022602860645237092, guid: 56c4942f205c1c14b87bd658cb4fd65b, type: 3}
+  ModelUseRelativePositions: 1
+  ModelDropHeadInput: 1
+  ModelAssetLSTM: {fileID: 5022602860645237092, guid: 5f6396452227bff4290262db2e7c6aa1, type: 3}
+  ModelAssetMLP: {fileID: 5022602860645237092, guid: b0e95afafc59b9f4686701e8529bbeaa, type: 3}
   TrackObjectLine: {fileID: 1210311865}
   TrackObjectArc: {fileID: 1515476044}
   GazeObject1: {fileID: 1517572048}
