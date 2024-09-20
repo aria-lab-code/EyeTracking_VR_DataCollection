@@ -18,7 +18,7 @@ public class SmoothPursuitArc : MonoBehaviour
     private float angle;
     private float dir;
     private Vector3 center;
-    private System.Random ran;
+    //private System.Random ran;
 
     private float speed;
 
@@ -36,7 +36,7 @@ public class SmoothPursuitArc : MonoBehaviour
     // Start is called before the first frame update
     void OnEnable()
     {
-        ran = new System.Random();
+        //ran = new System.Random();
         speed = 1f;
         transform.position = new Vector3(0, 5, 10);
         max = 10 * Mathf.Sqrt(3);
@@ -50,8 +50,10 @@ public class SmoothPursuitArc : MonoBehaviour
 
     void GetDir()
     {
-        int rand = ran.Next(0, 2);
-        if (rand == 0)
+        //int rand = ran.Next(0, 2);
+        float rand = UnityEngine.Random.Range(0f, 1f);
+        //if (rand == 0)
+        if (rand < 0.5f)
         {
             dir = 1; //counterclockwise
         }
@@ -79,9 +81,11 @@ public class SmoothPursuitArc : MonoBehaviour
         float minVal = Mathf.Max(-max, center.x - r);
         float maxVal = Mathf.Min(max, center.x + r);
         x = UnityEngine.Random.Range(minVal, maxVal);
-        int rand = ran.Next(0, 2);
+        //int rand = ran.Next(0, 2);
+        float rand = UnityEngine.Random.Range(0f, 1f);
         var val = 1;
-        if (rand == 0)
+        //if (rand == 0)
+        if (rand < 0.5f)
         {
             val = -1;
         }

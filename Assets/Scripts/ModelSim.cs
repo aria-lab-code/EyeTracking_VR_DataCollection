@@ -13,7 +13,7 @@ using ViveSR.anipal.Eye;
 
 public class ModelSim : MonoBehaviour
 {
-    private const bool DEBUG = true;
+    private const bool DEBUG = false;
 
     public enum ModelType
     {
@@ -48,6 +48,7 @@ public class ModelSim : MonoBehaviour
     private string _pathUser;
     private List<Vector3> _streamGazeL, _streamGazeR, _streamForward;
     private List<Quaternion> _streamCamera;
+    private List<List<Vector3>> _streamObjects;
 
     private ModelType _modelType;
     private static readonly ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
@@ -97,8 +98,8 @@ public class ModelSim : MonoBehaviour
     public TextMesh BreakMessage, CountdownMessage;
     private bool _continueClicked = false;
 
-    private readonly List<int> _scores;
-    private readonly List<int> _scoresPossible;
+    private readonly List<int> _scores = new List<int>();
+    private readonly List<int> _scoresPossible = new List<int>();
     private int _score;
     private int _scorePossible;
 
@@ -108,7 +109,7 @@ public class ModelSim : MonoBehaviour
 
     private bool _firstFrame = true;
 
-    private const int SECONDS_TRIAL = 10;
+    private const int SECONDS_TRIAL = 45;
     private const int SECONDS_COUNTDOWN = 5;
 
     public bool DoCalibrateAtStart;
@@ -158,7 +159,7 @@ public class ModelSim : MonoBehaviour
         DisableHeadTracking.Disable = false;
 
         _modelLSTM = ModelLoader.Load(ModelAssetLSTM, true);
-        _modelLSTMHiddenSize = _modelLSTM.inputs[1].shape[6];
+        _modelLSTMHiddenSize = 9; //  _modelLSTM.inputs[1].shape[6];
 
         _modelMLP = ModelLoader.Load(ModelAssetMLP);
 
@@ -375,9 +376,11 @@ public class ModelSim : MonoBehaviour
         RaycastHit hit;
         if (_testType == TestType.LinearPursuit)
         {
+            _streamObjects.Add(new List<Vector3> { TrackObjectLine.transform.position });
+
             _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
-            didHit = didHit && hit.transform.gameObject == TrackObjectArc;
+            didHit = didHit && hit.transform.gameObject == TrackObjectLine;
             TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(didHit);
             if (didHit)
             {
@@ -386,6 +389,8 @@ public class ModelSim : MonoBehaviour
         }
         else if (_testType == TestType.ArcPursuit)
         {
+            _streamObjects.Add(new List<Vector3> { TrackObjectArc.transform.position });
+
             _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
             didHit = didHit && hit.transform.gameObject == TrackObjectArc;
@@ -397,8 +402,15 @@ public class ModelSim : MonoBehaviour
         }
         else if (_testType == TestType.RapidMovement)
         {
-            bool didHit = Physics.Raycast(gaze, out hit);
             GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
+            List<Vector3> objects = new List<Vector3>();
+            foreach (GameObject gazeObject in gazeObjects)
+            {
+                objects.Add(gazeObject.transform.position);
+            }
+            _streamObjects.Add(objects);
+
+            bool didHit = Physics.Raycast(gaze, out hit);
             foreach (GameObject gazeObject in gazeObjects)
             {
                 gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == gazeObject);
@@ -406,9 +418,20 @@ public class ModelSim : MonoBehaviour
         }
         else if (_testType == TestType.RapidAvoid)
         {
-            bool didHit = Physics.Raycast(gaze, out hit);
             GameObject[] gazeObjects = { GazeObject1, GazeObject2, GazeObject3 };
             GameObject[] avoidObjects = { AvoidObject1, AvoidObject2, AvoidObject3 };
+            List<Vector3> objects = new List<Vector3>();
+            foreach (GameObject gazeObject in gazeObjects)
+            {
+                objects.Add(gazeObject.transform.position);
+            }
+            foreach (GameObject avoidObject in avoidObjects)
+            {
+                objects.Add(avoidObject.transform.position);
+            }
+            _streamObjects.Add(objects);
+
+            bool didHit = Physics.Raycast(gaze, out hit);
             foreach (GameObject gazeObject in gazeObjects)
             {
                 gazeObject.GetComponent<HighlightAtGaze>().GazeFocusChanged(didHit && hit.transform.gameObject == gazeObject);
@@ -575,9 +598,9 @@ public class ModelSim : MonoBehaviour
         }
         else
         {
-            //var new_forward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
+            var new_forward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
             //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
-            var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
+            //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
             rotation = Quaternion.LookRotation(new_forward);
         }
 
@@ -649,7 +672,7 @@ public class ModelSim : MonoBehaviour
 
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 2.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 40.0f);
         }
     }
 
@@ -889,15 +912,18 @@ public class ModelSim : MonoBehaviour
 
     private IEnumerator TrialStart(int testIndex, int trialIndex, TestType testType, bool disableHead, GameObject[] gameObjects)
     {
-        _streamGazeL = new List<Vector3>();
-        _streamGazeR = new List<Vector3>();
-        _streamForward = new List<Vector3>();
-        _streamCamera = new List<Quaternion>();
-
         HighlightAtGaze.Score = 0;
         HighlightAtGaze.ScorePossible = 0;
         _score = 0;
         _scorePossible = 0;
+
+        _streamGazeL = new List<Vector3>();
+        _streamGazeR = new List<Vector3>();
+        _streamForward = new List<Vector3>();
+        _streamCamera = new List<Quaternion>();
+        _streamObjects = new List<List<Vector3>>();
+
+        // Start trial.
         if (trialIndex > 0)
         {
             UnityEngine.Random.InitState(_testSeeds[testIndex]); // Make trials equivalent within the same task.
@@ -912,6 +938,7 @@ public class ModelSim : MonoBehaviour
         ResetModel();
         Invoke(nameof(EyeTrackerMeasurement), 0f);
 
+        // Run for some number of seconds.
         float gameTime = Time.time;
         while (Time.time - gameTime < SECONDS_TRIAL)
         {
@@ -925,6 +952,8 @@ public class ModelSim : MonoBehaviour
         }
         _scores.Add(_score);
         _scoresPossible.Add(_scorePossible);
+
+        // Write user data.
         string pathData = Path.Combine(_pathUser, "Trial" + testIndex + "_" + trialIndex + ".csv");
         File.WriteAllText(pathData, "eye_l_x,eye_l_y,eye_l_z,eye_r_x,eye_r_y,eye_r_z,head_x,head_y,head_z,camera_w,camera_x,camera_y,camera_z\r\n");
         for (int i = 0; i < _streamGazeL.Count; i++)
@@ -940,6 +969,40 @@ public class ModelSim : MonoBehaviour
             File.AppendAllText(pathData, s);
         }
 
+        // Write object data.
+        if (_streamObjects.Count > 0)
+        {
+            string pathObjectData = Path.Combine(_pathUser, "Objects" + testIndex + "_" + trialIndex + ".csv");
+            string header = "";
+            for (int j = 0; j < _streamObjects[0].Count; j++)
+            {
+                if (j > 0)
+                {
+                    header += ",";
+                }
+                header += "obj" + j + "_x,obj" + j + "_y,obj" + j + "_z";
+            }
+            header += "\r\n";
+            File.WriteAllText(pathObjectData, header);
+            for (int i = 0; i < _streamObjects.Count; i++)
+            {
+                List<Vector3> objects = _streamObjects[i];
+                string s = "";
+                for (int j = 0; j < objects.Count; j++)
+                {
+                    Vector3 obj = objects[j];
+                    if (j > 0)
+                    {
+                        s += ",";
+                    }
+                    s += "" + obj.x + "," + obj.y + "," + obj.z;
+                }
+                s += "\r\n";
+                File.AppendAllText(pathObjectData, s);
+            }
+        }
+
+        // End trial.
         foreach (GameObject gameObject in gameObjects)
         {
             gameObject.SetActive(false);
