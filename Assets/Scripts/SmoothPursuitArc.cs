@@ -111,7 +111,7 @@ public class SmoothPursuitArc : MonoBehaviour
             GetDir();
             GetAngle();
             atNextPos = false;
-            UnityEngine.Debug.Log(transform.position.ToString() + nextPos.ToString() + center.ToString());
+            //UnityEngine.Debug.Log(transform.position.ToString() + nextPos.ToString() + center.ToString());
         }
 
         angle += speed * Time.deltaTime * dir;

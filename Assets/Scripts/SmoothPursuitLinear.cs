@@ -34,7 +34,7 @@ public class SmoothPursuitLinear : MonoBehaviour
         x = UnityEngine.Random.Range(-max, max);
         y = UnityEngine.Random.Range(-max, max);
 
-        UnityEngine.Debug.Log($"{x},{y}");
+        //UnityEngine.Debug.Log($"{x},{y}");
         nextPos = new Vector3(x, y, 10);
 
         atNextPos = false;

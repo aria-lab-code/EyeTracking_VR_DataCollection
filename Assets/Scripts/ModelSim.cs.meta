@@ -3,7 +3,21 @@ guid: 4937e31b6ccd7b44694b1e647be389ef
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - ModelAssetLSTM: {fileID: 5022602860645237092, guid: a78d46cb092240240beb9f3fc2bb4ba6, type: 3}
+  - ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
+  - TrackObjectLine: {instanceID: 0}
+  - TrackObjectArc: {instanceID: 0}
+  - GazeObject1: {instanceID: 0}
+  - GazeObject2: {instanceID: 0}
+  - GazeObject3: {instanceID: 0}
+  - AvoidObject1: {instanceID: 0}
+  - AvoidObject2: {instanceID: 0}
+  - AvoidObject3: {instanceID: 0}
+  - BreakCanvas: {instanceID: 0}
+  - CountdownCanvas: {instanceID: 0}
+  - BreakMessage: {instanceID: 0}
+  - CountdownMessage: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

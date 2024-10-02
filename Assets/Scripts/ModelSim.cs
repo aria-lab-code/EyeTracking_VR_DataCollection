@@ -606,7 +606,8 @@ public class ModelSim : MonoBehaviour
 
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f); // LRXYZ
+            //_player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 16.0f); // LSTM...
         }
     }
 
@@ -672,7 +673,8 @@ public class ModelSim : MonoBehaviour
 
         if (DisableHeadTracking.Disable)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 40.0f);
+            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 40.0f); // MLP-v2
+            //_player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 0.5f); // MLP-...-WithZ...
         }
     }
 
