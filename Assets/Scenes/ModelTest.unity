@@ -2578,9 +2578,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ModelDownsamplingRate: 1
-  ModelUseRelativePositions: 0
+  ModelPredictRelativeHead: 0
   ModelDropHeadInput: 0
-  ModelAssetLSTM: {fileID: 5022602860645237092, guid: a78d46cb092240240beb9f3fc2bb4ba6, type: 3}
+  ModelAssetLSTM: {fileID: 5022602860645237092, guid: 147b0de5ca0b6e6458f876ac93924b88, type: 3}
   ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
   TrackObjectLine: {fileID: 1210311865}
   TrackObjectArc: {fileID: 1515476044}

@@ -24,7 +24,7 @@ public class GazeCollection2 : MonoBehaviour
     public string UserIDNum;       // Display the UserID in the 
     public string Path;             // TODO: Change this to the path to the SSD directory
     private static string UserID;
-    private static int trailNum;
+    private static int trialNum;
     private static string File_Path;
     private static string Record_name = "ScoreRecord" + ".txt";
     #endregion
@@ -48,7 +48,7 @@ public class GazeCollection2 : MonoBehaviour
     private const int SHORT_BREAK = 5;
     private float gameTime;
     private static TestType Testing;
-    private const float totalGameTime = 45;
+    private const float totalGameTime = 90;
     
 
     #region "EyeDataParameters"
@@ -63,7 +63,7 @@ public class GazeCollection2 : MonoBehaviour
     private static double gaze_sensitive;
     private static Stopwatch timer = new Stopwatch();
     private static Vector3 forward;
-
+    private static Quaternion rotation;
 
     #endregion
 
@@ -116,7 +116,7 @@ public class GazeCollection2 : MonoBehaviour
         {
             UserID = sr.ReadLine().Trim();
         }
-        trailNum = 0;
+        trialNum = 0;
         UserIDNum = UserID;
         RemoveFirstLine(File_Path);
 
@@ -165,9 +165,8 @@ public class GazeCollection2 : MonoBehaviour
         AvoidObject1.SetActive(false);
         AvoidObject2.SetActive(false);
         AvoidObject3.SetActive(false);
-        
-
     }
+
     void RapidMovementObjectData_txt()
     {
         string variable =
@@ -183,8 +182,9 @@ public class GazeCollection2 : MonoBehaviour
         "object3.y" + "," +
         "object3.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum.ToString()}.txt", variable);
     }
+
     void LinearPursuitObjectData_txt()
     {
         string variable =
@@ -194,8 +194,9 @@ public class GazeCollection2 : MonoBehaviour
         "object1.y" + "," +
         "object1.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum.ToString()}.txt", variable);
     }
+
     void ArcPursuitObjectData_txt()
     {
         string variable =
@@ -205,8 +206,9 @@ public class GazeCollection2 : MonoBehaviour
         "object1.y" + "," +
         "object1.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum.ToString()}.txt", variable);
     }
+
     void AvoidMovementObjectData_txt()
     {
         string variable =
@@ -231,8 +233,9 @@ public class GazeCollection2 : MonoBehaviour
         "AvoidObject3.y" + "," +
         "AvoidObject3.z" + "," +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trailNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum.ToString()}.txt", variable);
     }
+
     void Data_txt()
     {
         string variable =
@@ -248,11 +251,15 @@ public class GazeCollection2 : MonoBehaviour
         "forward.x" + "," +
         "forward.y" + "," +
         "forward.z" + "," +
+        "rotation.w," +
+        "rotation.x," +
+        "rotation.y," +
+        "rotation.z" +
         Environment.NewLine;
 
-        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") +"_"+ trailNum.ToString() + ".txt", variable);
-
+        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", variable);
     }
+
     void Record_txt()
     {
         if (!File.Exists(Record_name))
@@ -280,7 +287,6 @@ public class GazeCollection2 : MonoBehaviour
         File.AppendAllText(Record_name, value);
     }
 
-
     void Measurement()
     {
         EyeParameter eye_parameter = new EyeParameter();
@@ -307,7 +313,6 @@ public class GazeCollection2 : MonoBehaviour
             eye_callback_registered = false;
         }
     }
-
 
     void Release()
     {
@@ -353,10 +358,12 @@ public class GazeCollection2 : MonoBehaviour
     {
         continueClicked = true;
     }
+
     public void CalibrationClicked()
     {
         calibrationClicked = true;
     }
+
     struct RawGazeRays
     {
         public Vector3 origin;
@@ -385,8 +392,6 @@ public class GazeCollection2 : MonoBehaviour
         }
     }
 
-
-
     /// <summary>
     /// Update is called once per frame.
     /// The main purpose here now is to control the view of each frame
@@ -396,6 +401,7 @@ public class GazeCollection2 : MonoBehaviour
         frame++;
         localToWorldTransform = Camera.main.transform.localToWorldMatrix;
         forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1));
+        rotation = Camera.main.transform.rotation;
         RawGazeRays localGazeRays;
         GetGazeRays(out localGazeRays, GazeIndex.COMBINE);
         RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
@@ -413,7 +419,7 @@ public class GazeCollection2 : MonoBehaviour
             {
                 foreach (var obj in GazeObjs)
                 {
-                    obj.GetComponent<HighlightAtGaze>().GazeFocusChanged(obj == hit.transform.gameObject);
+                    obj.GetComponent<HighlightAtGaze>()?.GazeFocusChanged(obj == hit.transform.gameObject);
                 }
             }
         }
@@ -444,7 +450,10 @@ public class GazeCollection2 : MonoBehaviour
         else if (Testing == TestType.SmoothArcTest)
         {
             total_score++;
-            ArcPursuitObjectCallback();
+            if (!BreakCanvas2.enabled)
+            {
+                ArcPursuitObjectCallback();
+            }
             if (Physics.Raycast(gaze, out hit, 999f, RayCastLayers))
             {
                 if (hit.transform.gameObject.CompareTag("GazeObject1"))
@@ -535,6 +544,7 @@ public class GazeCollection2 : MonoBehaviour
                 }
             }
         }
+
         if (firstFrame)
         {
             StartCoroutine(Sequence());
@@ -575,7 +585,7 @@ obj3Position[1] + "," +
 obj3Position[2] + "," +
 
 Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trailNum.ToString()}.txt", value);
+        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum.ToString()}.txt", value);
     }
     void AvoidMovementObjectCallback()
     {
@@ -622,7 +632,7 @@ obj6Position[0] + "," +
 obj6Position[1] + "," +
 obj6Position[2] + "," +
 Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trailNum.ToString()}.txt", value);
+        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", value);
     }
     void LinearPursuitObjectCallback()
     {
@@ -639,7 +649,7 @@ obj1Position[0] + "," +
 obj1Position[1] + "," +
 obj1Position[2] + "," +
 Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trailNum.ToString()}.txt", value);
+        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", value);
     }
     void ArcPursuitObjectCallback()
     {
@@ -656,7 +666,7 @@ obj1Position[0] + "," +
 obj1Position[1] + "," +
 obj1Position[2] + "," +
 Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trailNum.ToString()}.txt", value);
+        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", value);
     }
     /// <summary>
     /// Callback function to record the eye movement data.
@@ -707,9 +717,13 @@ Environment.NewLine;
                 forward.x.ToString() + "," +
                 forward.y.ToString() + "," +
                 forward.z.ToString() + "," +
+                rotation.w.ToString() + "," +
+                rotation.x.ToString() + "," +
+                rotation.y.ToString() + "," +
+                rotation.z.ToString() +
                 Environment.NewLine;
 
-            File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trailNum.ToString() + ".txt", value);
+            File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", value);
 
             cnt_callback++;
         }
@@ -782,11 +796,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayBreakMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
         
         breakMessage2.text = "You have completed the first round of the Linear Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n"+
@@ -795,11 +809,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCalibrationMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Linear Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -808,12 +822,12 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCalibrationMenu());
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(LinearPursuit());
-        score_record.Add($"linear_score_{trailNum}", score);
-        score_record.Add($"linear_total_score_{trailNum}", total_score);
+        score_record.Add($"linear_score_{trialNum}", score);
+        score_record.Add($"linear_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum = 0;
+        trialNum = 0;
 
         //****Arc Pursuit section(3 games)
         breakMessage2.text = "You have completed the Linear Pursuit Test!\n" +
@@ -829,12 +843,12 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the first round of the Arc Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -846,11 +860,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Arc Pursuit Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -862,12 +876,12 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(ArcPursuit());
 
-        score_record.Add($"arc_score_{trailNum}", score);
-        score_record.Add($"arc_total_score_{trailNum}", total_score);
+        score_record.Add($"arc_score_{trialNum}", score);
+        score_record.Add($"arc_total_score_{trialNum}", total_score);
         breakMessage2.text = "Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum = 0;
+        trialNum = 0;
         
         breakMessage2.text = "You have completed the Arc Pursuit Test!\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -882,12 +896,12 @@ Environment.NewLine;
         
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum++;
+        trialNum++;
         
         breakMessage2.text = "You have completed the first round of the Rapid Movement Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -899,11 +913,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
 
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
 
         breakMessage2.text = "You have completed the second round of the Rapid Movement Test.\n" +
@@ -916,12 +930,12 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidMovementTest());
 
-        score_record.Add($"rapid_score_{trailNum}", score);
-        score_record.Add($"rapid_total_score_{trailNum}", total_score);
+        score_record.Add($"rapid_score_{trialNum}", score);
+        score_record.Add($"rapid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Movement Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 
-        trailNum=0;
+        trialNum = 0;
         breakMessage2.text = "You have completed the Rapid Movement Test!\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
                              "When you're ready to resume, please click <Calibration> upon your return.\n" +
@@ -937,11 +951,11 @@ Environment.NewLine;
         
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the first round of the Rapid Avoid Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -953,11 +967,11 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
 
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
-        trailNum++;
+        trialNum++;
 
         breakMessage2.text = "You have completed the second round of the Rapid Avoid Test.\n" +
                              "If you would like to take a break, you can click <Rest> and remove the headset now.\n" +
@@ -969,8 +983,8 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayCountdown(SHORT_BREAK, ""));
         yield return StartCoroutine(RapidAvoidTest());
 
-        score_record.Add($"avoid_score_{trailNum}", score);
-        score_record.Add($"avoid_total_score_{trailNum}", total_score);
+        score_record.Add($"avoid_score_{trialNum}", score);
+        score_record.Add($"avoid_total_score_{trialNum}", total_score);
         breakMessage2.text = "Rapid Avoid Test Score:" + score.ToString() + "/" + total_score.ToString();
         yield return StartCoroutine(DisplayBreakMenu());
 

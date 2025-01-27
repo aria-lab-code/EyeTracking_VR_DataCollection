@@ -13,7 +13,7 @@ using ViveSR.anipal.Eye;
 
 public class ModelSim : MonoBehaviour
 {
-    private const bool DEBUG = false;
+    private const bool DEBUG = true;//false;
 
     public enum ModelType
     {
@@ -46,9 +46,9 @@ public class ModelSim : MonoBehaviour
 
     private int _userID;
     private string _pathUser;
-    private List<Vector3> _streamGazeL, _streamGazeR, _streamForward;
-    private List<Quaternion> _streamCamera;
-    private List<List<Vector3>> _streamObjects;
+    private List<Vector3> _historyGazeL, _historyGazeR, _historyForward;
+    private List<Quaternion> _historyCamera;
+    private List<List<Vector3>> _historyObjects;
 
     private ModelType _modelType;
     private static readonly ModelType[][] MODEL_TYPE_ORDERINGS = new ModelType[][]
@@ -67,7 +67,7 @@ public class ModelSim : MonoBehaviour
 
     public int ModelDownsamplingRate;
     private int _frameMod = 0; // Used with `DownsamplingRate` to perform inference only on each n-th frame.
-    public bool ModelUseRelativePositions;
+    public bool ModelPredictRelativeHead;
     public bool ModelDropHeadInput;
 
     private int _inputLength = 9;
@@ -78,17 +78,12 @@ public class ModelSim : MonoBehaviour
     private int _modelLSTMHiddenSize; // Initialized dynamically; used to allocate hidden and context tensors.
     private IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
 
-    private const int MLP_WINDOW_SIZE = 3;
     public NNModel ModelAssetMLP;
     private Model _modelMLP;
     private Tensor _tensorMLPInput;
     private IWorker _workerMLP;
 
     private Vector3 _vecGazeL, _vecGazeR, _vecForward;
-    private Vector3[] _bufferGazeL, _bufferGazeR, _bufferForward;
-    private int _bufferCapacity;  // Create a buffer to hold a small history of states.
-    private int _bufferIndex = 0;
-    private int _bufferSize = 0;
 
     public GameObject TrackObjectLine;
     public GameObject TrackObjectArc;
@@ -109,7 +104,7 @@ public class ModelSim : MonoBehaviour
 
     private bool _firstFrame = true;
 
-    private const int SECONDS_TRIAL = 45;
+    private const int SECONDS_TRIAL = 20; //45;
     private const int SECONDS_COUNTDOWN = 5;
 
     public bool DoCalibrateAtStart;
@@ -159,22 +154,9 @@ public class ModelSim : MonoBehaviour
         DisableHeadTracking.Disable = false;
 
         _modelLSTM = ModelLoader.Load(ModelAssetLSTM, true);
-        _modelLSTMHiddenSize = 9; //  _modelLSTM.inputs[1].shape[6];
+        _modelLSTMHiddenSize = _modelLSTM.inputs[1].shape[6];
 
         _modelMLP = ModelLoader.Load(ModelAssetMLP);
-
-        if (ModelUseRelativePositions)
-        {
-            // Need an additional data point to calculate difference between x_t and x_{t-downsampling_rate}.
-            _bufferCapacity = (MLP_WINDOW_SIZE + 1) * ModelDownsamplingRate;
-        }
-        else
-        {
-            _bufferCapacity = MLP_WINDOW_SIZE * ModelDownsamplingRate;
-        }
-        _bufferGazeL = new Vector3[_bufferCapacity];
-        _bufferGazeR = new Vector3[_bufferCapacity];
-        _bufferForward = new Vector3[_bufferCapacity];
 
         if (ModelDropHeadInput)
         {
@@ -251,18 +233,18 @@ public class ModelSim : MonoBehaviour
     /// Sep 12 2024, Eric: I found out that this function has to be STATIC or the app crashes. Go figure.
     ///     Therefore, everything that this function calls/accesses must also be static.
     /// </summary>
-    private static void GazeCallbackStatic(ref EyeData_v2 eye_data)
+    private static void GazeCallbackStatic(ref EyeData_v2 eyeData)
     {
-        _instance.GazeCallback(eye_data);
+        _instance.GazeCallback(eyeData);
     }
 
     /// <summary>
     /// Runs at 120 Hz.
     /// </summary>
-    /// <param name="eye_data"></param>
-    private void GazeCallback(EyeData_v2 eye_data)
+    /// <param name="eyeData"></param>
+    private void GazeCallback(EyeData_v2 eyeData)
     {
-        _eyeData = eye_data;
+        _eyeData = eyeData;
 
         Error error = SRanipal_Eye_API.GetEyeData_v2(ref _eyeData);
         if (error == ViveSR.Error.WORK)
@@ -276,39 +258,6 @@ public class ModelSim : MonoBehaviour
             _vecGazeR = gazeR;
         }
     }
-
-    //private static void SetGazeVectors(Vector3 gazeL, Vector3 gazeR)
-    //{
-    //    gazeL.x *= -1;
-    //    gazeR.x *= -1;
-
-    //    _vecGazeL = gazeL;
-    //    _vecGazeR = gazeR;
-
-    //    _bufferGazeIndex = (_bufferGazeIndex + 1) % _bufferCapacity;
-    //    _bufferGazeL[_bufferGazeIndex] = _vecGazeL;
-    //    _bufferGazeR[_bufferGazeIndex] = _vecGazeR;
-    //    if (_bufferGazeSize < _bufferCapacity)
-    //    {
-    //        _bufferGazeSize++;
-    //    }
-    //}
-
-    //private void SetForwardVector(Vector3 forwardVec)
-    //{
-    //    _vecForward = forwardVec;
-
-    //    _bufferForwardIndex = (_bufferForwardIndex + 1) % _bufferCapacity;
-    //    _bufferForward[_bufferForwardIndex] = _vecForward;
-    //    if (_bufferForwardSize < _bufferCapacity)
-    //    {
-    //        _bufferForwardSize++;
-    //    }
-    //}
-
-    //void GetGazeRay(out Vector3 origin, out Vector3 direction, Transform transform)
-    //{
-    //}
 
     /// <summary>
     /// Changes the flag to indicate that one of the menu continue buttons has been clicked.
@@ -329,42 +278,44 @@ public class ModelSim : MonoBehaviour
         {
             _vecForward = _player.forward;
 
-            _bufferIndex = (_bufferIndex + 1) % _bufferCapacity;
-            _bufferGazeL[_bufferIndex] = _vecGazeL;
-            _bufferGazeR[_bufferIndex] = _vecGazeR;
-            _bufferForward[_bufferIndex] = _vecForward;
-            if (_bufferSize < _bufferCapacity)
-            {
-                _bufferSize++;
-            }
-
-            _streamGazeL.Add(_vecGazeL);
-            _streamGazeR.Add(_vecGazeR);
-            _streamForward.Add(_vecForward);
-            _streamCamera.Add(_camera.localRotation);
+            _historyGazeL.Add(_vecGazeL);
+            _historyGazeR.Add(_vecGazeR);
+            _historyForward.Add(_vecForward);
+            _historyCamera.Add(_camera.localRotation);
         }
 
-        switch (_modelType)
+        // Check that both eyes are open.
+        SingleEyeDataValidity validity = SingleEyeDataValidity.SINGLE_EYE_DATA_EYE_OPENNESS_VALIDITY;
+        if (_eyeData.verbose_data.left.GetValidity(validity) || _eyeData.verbose_data.right.GetValidity(validity))
         {
-            case ModelType.BaselineQuadrant:
-                QuadrantBaseline();
-                break;
-            case ModelType.BaselineVector:
-                VectorBaseline();
-                break;
-            // Respect model down-sampling rate below.
-            case ModelType.LSTM:
-                if (_frameMod == 0)
-                {
-                    ModelCallLSTM();
-                }
-                break;
-            case ModelType.MLP:
-                if (_frameMod == 0)
-                {
-                    ModelCallMLP();
-                }
-                break;
+            // Invoke model inference.
+            switch (_modelType)
+            {
+                case ModelType.BaselineQuadrant:
+                    QuadrantBaseline();
+                    break;
+                case ModelType.BaselineVector:
+                    Vector3 vecGaze = (_vecGazeL + _vecGazeR).normalized;
+                    Quaternion? rotation = BaselineInference.VectorBaseline(_player, vecGaze, _vecForward);
+                    if (rotation != null)
+                    {
+                        _player.rotation = (Quaternion)rotation;
+                    }
+                    break;
+                // Respect model down-sampling rate below.
+                case ModelType.LSTM:
+                    if (_frameMod == 0)
+                    {
+                        ModelCallLSTM();
+                    }
+                    break;
+                case ModelType.MLP:
+                    if (_frameMod == 0)
+                    {
+                        ModelCallMLP();
+                    }
+                    break;
+            }
         }
 
         Vector3 origin, direction;
@@ -376,7 +327,7 @@ public class ModelSim : MonoBehaviour
         RaycastHit hit;
         if (_testType == TestType.LinearPursuit)
         {
-            _streamObjects.Add(new List<Vector3> { TrackObjectLine.transform.position });
+            _historyObjects.Add(new List<Vector3> { TrackObjectLine.transform.position });
 
             _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
@@ -389,7 +340,7 @@ public class ModelSim : MonoBehaviour
         }
         else if (_testType == TestType.ArcPursuit)
         {
-            _streamObjects.Add(new List<Vector3> { TrackObjectArc.transform.position });
+            _historyObjects.Add(new List<Vector3> { TrackObjectArc.transform.position });
 
             _scorePossible++;
             bool didHit = Physics.Raycast(gaze, out hit);
@@ -408,7 +359,7 @@ public class ModelSim : MonoBehaviour
             {
                 objects.Add(gazeObject.transform.position);
             }
-            _streamObjects.Add(objects);
+            _historyObjects.Add(objects);
 
             bool didHit = Physics.Raycast(gaze, out hit);
             foreach (GameObject gazeObject in gazeObjects)
@@ -429,7 +380,7 @@ public class ModelSim : MonoBehaviour
             {
                 objects.Add(avoidObject.transform.position);
             }
-            _streamObjects.Add(objects);
+            _historyObjects.Add(objects);
 
             bool didHit = Physics.Raycast(gaze, out hit);
             foreach (GameObject gazeObject in gazeObjects)
@@ -495,32 +446,32 @@ public class ModelSim : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Rotate the player object by finding vector between current forward direction and eye gaze
-    /// direction. Rotate in direction of this vector.
-    /// </summary>
-    private void VectorBaseline()
-    {
-        // Compute
+    ///// <summary>
+    ///// Rotate the player object by finding vector between current forward direction and eye gaze
+    ///// direction. Rotate in direction of this vector.
+    ///// </summary>
+    //private void VectorBaseline()
+    //{
+    //    // Compute
 
-        // Colin Rubow: "1.767 is the average velocity proportion for the vector based controller.
-        // It means, every 1 deg further a target is, the head should move 1.767 deg/s faster."
-        float vectorVelocityProportion = 1.767f;
+    //    // Colin Rubow: "1.767 is the average velocity proportion for the vector based controller.
+    //    // It means, every 1 deg further a target is, the head should move 1.767 deg/s faster."
+    //    float vectorVelocityProportion = 1.767f;
 
-        float angle_boundary = 5.0f;  //boundary of eye angle
-        //float rotate_speed = 4f;  //each rotate angle
+    //    float angle_boundary = 5.0f;  //boundary of eye angle
+    //    //float rotate_speed = 4f;  //each rotate angle
 
-        // eye angle in x direction > angle_boundary : rotate the 
-        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
+    //    // eye angle in x direction > angle_boundary : rotate the 
+    //    Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
 
-        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
-        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
-        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
-        {
-            float rotate_speed = 0.25f * vectorVelocityProportion * angle;
-           _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
-        }
-    }
+    //    var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
+    //    var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
+    //    if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
+    //    {
+    //        float rotate_speed = 0.25f * vectorVelocityProportion * angle;
+    //       _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
+    //    }
+    //}
 
     private void DebugTensorAxis6(Tensor tensor, string label)
     {
@@ -539,34 +490,13 @@ public class ModelSim : MonoBehaviour
 
     private void ModelCallLSTM()
     {
-        if (ModelUseRelativePositions)
+        for (int i = 0; i < 3; i++)
         {
-            if (_bufferSize <= ModelDownsamplingRate)
+            _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
+            _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i];
+            if (!ModelDropHeadInput)
             {
-                return;
-            }
-
-            int indexPrev = (_bufferIndex - ModelDownsamplingRate + _bufferCapacity) % _bufferCapacity;
-            for (int i = 0; i < 3; i++)
-            {
-                _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i] - _bufferGazeL[indexPrev][i];
-                _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i] - _bufferGazeR[indexPrev][i];
-                if (!ModelDropHeadInput)
-                {
-                    _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i] - _bufferForward[indexPrev][i];
-                }
-            }
-        }
-        else
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
-                _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i];
-                if (!ModelDropHeadInput)
-                {
-                    _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
-                }
+                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
             }
         }
 
@@ -575,33 +505,34 @@ public class ModelSim : MonoBehaviour
             {"h0", _tensorLSTMHidden},
             {"c0", _tensorLSTMContext}
         };
-        //DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
+        DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
         //DebugTensorAxis6(_tensorLSTMHidden, "LSTM hidden");
         //DebugTensorAxis6(_tensorLSTMContext, "LSTM context");
 
         _workerLSTM.Execute(inputs);
         Tensor output = _workerLSTM.PeekOutput("output");
-        //DebugTensorAxis6(output, "LSTM output");
+        DebugTensorAxis6(output, "LSTM output");
         _tensorLSTMHidden?.Dispose();
         _tensorLSTMHidden = _workerLSTM.PeekOutput("hn");
         _tensorLSTMContext?.Dispose();
         _tensorLSTMContext = _workerLSTM.PeekOutput("cn");
 
         Quaternion rotation;
-        if (ModelUseRelativePositions)
+        if (ModelPredictRelativeHead)
         {
-            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]);
+            //var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]);
+            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]);
             //Debug.Log("delta: " + delta.ToString());
             //Debug.Log("delta.normalized: " + delta.normalized.ToString());
-            rotation = Quaternion.LookRotation(_vecForward + delta.normalized);
+            rotation = Quaternion.LookRotation((_vecForward + delta).normalized);
             //Debug.Log("rotation: " + rotation.ToString());
         }
         else
         {
-            var new_forward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
+            var newForward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
             //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
             //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
-            rotation = Quaternion.LookRotation(new_forward);
+            rotation = Quaternion.LookRotation(newForward);
         }
 
         if (DisableHeadTracking.Disable)
@@ -613,40 +544,14 @@ public class ModelSim : MonoBehaviour
 
     private void ModelCallMLP()
     {
-        if (_bufferSize < _bufferCapacity)
-        {
-            return;
-        }
-
         // Build the input vector
-        for (int w = 0; w < MLP_WINDOW_SIZE; w++)
+        for (int i = 0; i < 3; i++)
         {
-            int index = (_bufferIndex + ((w - MLP_WINDOW_SIZE + 1) * ModelDownsamplingRate) + _bufferCapacity) % _bufferCapacity;
-            int windowOffset = w * _inputLength;
-            if (ModelUseRelativePositions)
+            _tensorMLPInput[0, 0, i, 0] = _vecGazeL[i];
+            _tensorMLPInput[0, 0, i + 3, 0] = _vecGazeR[i];
+            if (!ModelDropHeadInput)
             {
-                int indexPrev = (index - ModelDownsamplingRate + _bufferCapacity) % _bufferCapacity;
-                for (int i = 0; i < 3; i++)
-                {
-                    _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i] - _bufferGazeL[indexPrev][i];
-                    _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i] - _bufferGazeR[indexPrev][i];
-                    if (!ModelDropHeadInput)
-                    {
-                        _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i] - _bufferForward[indexPrev][i];
-                    }
-                }
-            }
-            else
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    _tensorMLPInput[0, 0, windowOffset + i, 0] = _bufferGazeL[index][i];
-                    _tensorMLPInput[0, 0, windowOffset + 3 + i, 0] = _bufferGazeR[index][i];
-                    if (!ModelDropHeadInput)
-                    {
-                        _tensorMLPInput[0, 0, windowOffset + 6 + i, 0] = _bufferForward[index][i];
-                    }
-                }
+                _tensorMLPInput[0, 0, i + 6, 0] = _vecForward[i];
             }
         }
         var Inputs = new Dictionary<string, Tensor>() {
@@ -660,15 +565,15 @@ public class ModelSim : MonoBehaviour
         //DebugTensorAxis6(output, "MLP output");
 
         Quaternion rotation;
-        if (ModelUseRelativePositions)
+        if (ModelPredictRelativeHead)
         {
             var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 1]);
-            rotation = Quaternion.LookRotation(_vecForward + delta.normalized);
+            rotation = Quaternion.LookRotation((_vecForward + delta).normalized);
         }
         else
         {
-            var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
-            rotation = Quaternion.LookRotation(new_forward);
+            var newForward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
+            rotation = Quaternion.LookRotation(newForward);
         }
 
         if (DisableHeadTracking.Disable)
@@ -699,9 +604,7 @@ public class ModelSim : MonoBehaviour
         _workerMLP?.Dispose();
         _tensorMLPInput?.Dispose();
         _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.ComputePrecompiled, _modelMLP);
-        _tensorMLPInput = new Tensor(1, 1, MLP_WINDOW_SIZE * _inputLength, 1);
-
-        _bufferSize = 0;
+        _tensorMLPInput = new Tensor(1, 1, _inputLength, 1);
     }
 
     private void ResetHead()
@@ -919,11 +822,11 @@ public class ModelSim : MonoBehaviour
         _score = 0;
         _scorePossible = 0;
 
-        _streamGazeL = new List<Vector3>();
-        _streamGazeR = new List<Vector3>();
-        _streamForward = new List<Vector3>();
-        _streamCamera = new List<Quaternion>();
-        _streamObjects = new List<List<Vector3>>();
+        _historyGazeL = new List<Vector3>();
+        _historyGazeR = new List<Vector3>();
+        _historyForward = new List<Vector3>();
+        _historyCamera = new List<Quaternion>();
+        _historyObjects = new List<List<Vector3>>();
 
         // Start trial.
         if (trialIndex > 0)
@@ -958,12 +861,12 @@ public class ModelSim : MonoBehaviour
         // Write user data.
         string pathData = Path.Combine(_pathUser, "Trial" + testIndex + "_" + trialIndex + ".csv");
         File.WriteAllText(pathData, "eye_l_x,eye_l_y,eye_l_z,eye_r_x,eye_r_y,eye_r_z,head_x,head_y,head_z,camera_w,camera_x,camera_y,camera_z\r\n");
-        for (int i = 0; i < _streamGazeL.Count; i++)
+        for (int i = 0; i < _historyGazeL.Count; i++)
         {
-            Vector3 eyeL = _streamGazeL[i];
-            Vector3 eyeR = _streamGazeR[i];
-            Vector3 head = _streamForward[i];
-            Quaternion cameraQ = _streamCamera[i];
+            Vector3 eyeL = _historyGazeL[i];
+            Vector3 eyeR = _historyGazeR[i];
+            Vector3 head = _historyForward[i];
+            Quaternion cameraQ = _historyCamera[i];
             string s = "" + eyeL.x + "," + eyeL.y + "," + eyeL.z +
                 "," + eyeR.x + "," + eyeR.y + "," + eyeR.z +
                 "," + head.x + "," + head.y + "," + head.z +
@@ -972,11 +875,11 @@ public class ModelSim : MonoBehaviour
         }
 
         // Write object data.
-        if (_streamObjects.Count > 0)
+        if (_historyObjects.Count > 0)
         {
             string pathObjectData = Path.Combine(_pathUser, "Objects" + testIndex + "_" + trialIndex + ".csv");
             string header = "";
-            for (int j = 0; j < _streamObjects[0].Count; j++)
+            for (int j = 0; j < _historyObjects[0].Count; j++)
             {
                 if (j > 0)
                 {
@@ -986,9 +889,9 @@ public class ModelSim : MonoBehaviour
             }
             header += "\r\n";
             File.WriteAllText(pathObjectData, header);
-            for (int i = 0; i < _streamObjects.Count; i++)
+            for (int i = 0; i < _historyObjects.Count; i++)
             {
-                List<Vector3> objects = _streamObjects[i];
+                List<Vector3> objects = _historyObjects[i];
                 string s = "";
                 for (int j = 0; j < objects.Count; j++)
                 {
