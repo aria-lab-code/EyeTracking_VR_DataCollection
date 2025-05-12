@@ -13,7 +13,7 @@ using ViveSR.anipal.Eye;
 
 public class ModelSim : MonoBehaviour
 {
-    private const bool DEBUG = true;//false;
+    public bool DebugMode;
 
     public enum ModelType
     {
@@ -65,10 +65,15 @@ public class ModelSim : MonoBehaviour
     private TestType _testType = TestType.None;
     private readonly List<int> _testSeeds = new List<int>();
 
-    public int ModelDownsamplingRate;
-    private int _frameMod = 0; // Used with `DownsamplingRate` to perform inference only on each n-th frame.
-    public bool ModelPredictRelativeHead;
-    public bool ModelDropHeadInput;
+    double _vPitch = 0.1562f;
+    double _aPitch = 0.8983f;
+    double _bPitch = 2.7913f;
+    double _cPitch = -0.1261f;
+
+    double _vYaw = 0.1629f;
+    double _aYaw = 0.5761f;
+    double _bYaw = 2.4104f;
+    double _cYaw = 0.0290f;
 
     private int _inputLength = 9;
 
@@ -77,11 +82,18 @@ public class ModelSim : MonoBehaviour
     private Tensor _tensorLSTMInput, _tensorLSTMHidden, _tensorLSTMContext;
     private int _modelLSTMHiddenSize; // Initialized dynamically; used to allocate hidden and context tensors.
     private IWorker _workerLSTM; // https://docs.unity3d.com/Packages/com.unity.barracuda@1.0/manual/Worker.html
+    private const int MODEL_LSTM_SKIP_UPDATE_ITERATIONS = 11;
+    private int _modelLSTMSkipCounter = 0;
 
     public NNModel ModelAssetMLP;
     private Model _modelMLP;
     private Tensor _tensorMLPInput;
     private IWorker _workerMLP;
+
+    public NNModel ModelAssetMLP1;
+    private Model _modelMLP1;
+    private Tensor _tensorMLPInput1;
+    private IWorker _workerMLP1;
 
     private Vector3 _vecGazeL, _vecGazeR, _vecForward;
 
@@ -104,7 +116,7 @@ public class ModelSim : MonoBehaviour
 
     private bool _firstFrame = true;
 
-    private const int SECONDS_TRIAL = 20; //45;
+    public int SecondsTrial;
     private const int SECONDS_COUNTDOWN = 5;
 
     public bool DoCalibrateAtStart;
@@ -119,14 +131,14 @@ public class ModelSim : MonoBehaviour
         _userID = linesUsers.Length - 1; // Auto-increment.
 
         System.Random rng = new System.Random(_userID);
-        string lineUser = "" + _userID + "," + SECONDS_TRIAL;
+        string lineUser = "" + _userID + "," + SecondsTrial;
         for (int i = 0; i < TEST_COUNT + 1; i++)
         {
             int seed = rng.Next() % 65536;
             _testSeeds.Add(seed);
             lineUser += "," + seed.ToString();
 
-            int index = DEBUG ? 0 : rng.Next() % MODEL_TYPE_ORDERINGS.Length;
+            int index = DebugMode ? 0 : rng.Next() % MODEL_TYPE_ORDERINGS.Length;
             _modelTypeOrderingIndices.Add(index);
             for (int j = 0; j < 3; j++)
             {
@@ -141,7 +153,8 @@ public class ModelSim : MonoBehaviour
         Invoke(nameof(EyeTrackerSystemCheck), 0.5f);
         if (DoCalibrateAtStart)
         {
-            SRanipal_Eye_v2.LaunchEyeCalibration();
+            bool calibrationError = SRanipal_Eye_v2.LaunchEyeCalibration();
+            Debug.Log("Calibration at start: " + calibrationError);
         }
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
 
@@ -157,11 +170,7 @@ public class ModelSim : MonoBehaviour
         _modelLSTMHiddenSize = _modelLSTM.inputs[1].shape[6];
 
         _modelMLP = ModelLoader.Load(ModelAssetMLP);
-
-        if (ModelDropHeadInput)
-        {
-            _inputLength -= 3;
-        }
+        _modelMLP1 = ModelLoader.Load(ModelAssetMLP1);
 
         TrackObjectLine.SetActive(false);
         TrackObjectArc.SetActive(false);
@@ -271,8 +280,6 @@ public class ModelSim : MonoBehaviour
     // Runs at 90Hz without inference; ~45Hz with LSTM; ~85Hz with MLP.
     void Update()
     {
-        _frameMod = (_frameMod + 1) % ModelDownsamplingRate;
-
         //SetForwardVector(_player.forward);
         if (_testType != TestType.None)
         {
@@ -286,7 +293,7 @@ public class ModelSim : MonoBehaviour
 
         // Check that both eyes are open.
         SingleEyeDataValidity validity = SingleEyeDataValidity.SINGLE_EYE_DATA_EYE_OPENNESS_VALIDITY;
-        if (_eyeData.verbose_data.left.GetValidity(validity) || _eyeData.verbose_data.right.GetValidity(validity))
+        if (_eyeData.verbose_data.left.GetValidity(validity) && _eyeData.verbose_data.right.GetValidity(validity))
         {
             // Invoke model inference.
             switch (_modelType)
@@ -295,27 +302,21 @@ public class ModelSim : MonoBehaviour
                     QuadrantBaseline();
                     break;
                 case ModelType.BaselineVector:
-                    Vector3 vecGaze = (_vecGazeL + _vecGazeR).normalized;
-                    Quaternion? rotation = BaselineInference.VectorBaseline(_player, vecGaze, _vecForward);
-                    if (rotation != null)
-                    {
-                        _player.rotation = (Quaternion)rotation;
-                    }
+                    //VectorBaseline();
+                    VectorParameterized();
                     break;
-                // Respect model down-sampling rate below.
                 case ModelType.LSTM:
-                    if (_frameMod == 0)
-                    {
-                        ModelCallLSTM();
-                    }
+                    ModelCallLSTM();
+                    //ModelCallMLP1();
                     break;
                 case ModelType.MLP:
-                    if (_frameMod == 0)
-                    {
-                        ModelCallMLP();
-                    }
+                    ModelCallMLP();
                     break;
             }
+        }
+        else if (_modelType != ModelType.None)
+        {
+
         }
 
         Vector3 origin, direction;
@@ -450,39 +451,70 @@ public class ModelSim : MonoBehaviour
     ///// Rotate the player object by finding vector between current forward direction and eye gaze
     ///// direction. Rotate in direction of this vector.
     ///// </summary>
-    //private void VectorBaseline()
-    //{
-    //    // Compute
+    private void VectorBaseline()
+    {
+        // Compute
 
-    //    // Colin Rubow: "1.767 is the average velocity proportion for the vector based controller.
-    //    // It means, every 1 deg further a target is, the head should move 1.767 deg/s faster."
-    //    float vectorVelocityProportion = 1.767f;
+        // Colin Rubow: "1.767 is the average velocity proportion for the vector based controller.
+        // It means, every 1 deg further a target is, the head should move 1.767 deg/s faster."
+        float vectorVelocityProportion = 1.767f;
 
-    //    float angle_boundary = 5.0f;  //boundary of eye angle
-    //    //float rotate_speed = 4f;  //each rotate angle
+        float angle_boundary = 5.0f;  //boundary of eye angle
+        //float rotate_speed = 4f;  //each rotate angle
 
-    //    // eye angle in x direction > angle_boundary : rotate the 
-    //    Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
+        // eye angle in x direction > angle_boundary : rotate the 
+        Vector3 gaze_direct_avg_world = _player.rotation * (_vecGazeL + _vecGazeR).normalized;
 
-    //    var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
-    //    var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
-    //    if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
-    //    {
-    //        float rotate_speed = 0.25f * vectorVelocityProportion * angle;
-    //       _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
-    //    }
-    //}
+        var angle = Vector3.Angle(gaze_direct_avg_world, _vecForward);
+        var global_angle = Vector3.Angle(gaze_direct_avg_world, new Vector3(0, 0, 1));
+        if ((angle > angle_boundary || angle < -1 * angle_boundary) && (global_angle < 70f && global_angle > -70f))
+        {
+            float rotate_speed = 0.25f * vectorVelocityProportion * angle;
+            _player.rotation = Quaternion.Slerp(_player.rotation, Quaternion.LookRotation(gaze_direct_avg_world), Time.deltaTime * rotate_speed);
+        }
+    }
 
-    private void DebugTensorAxis6(Tensor tensor, string label)
+    private void VectorParameterized()
+    {
+        Vector3 v = (_vecGazeL + _vecGazeR).normalized;
+        double thetaPitch = Math.Atan(v.y / v.z);
+        int signPitch = (thetaPitch < 0.0) ? -1 : 1;
+        double thetaYaw = Math.Atan(v.x / v.z);
+        int signYaw = (thetaYaw < 0.0) ? -1 : 1;
+
+        double incrementPitch = VectorAngleDeadZone(Math.Abs(thetaPitch), _vPitch, _aPitch, _bPitch, _cPitch);
+        double incrementYaw = VectorAngleDeadZone(Math.Abs(thetaYaw), _vYaw, _aYaw, _bYaw, _cYaw);
+        RotatePlayer((float)incrementPitch * signPitch, (float)incrementYaw * signYaw);
+    }
+
+    private double VectorAngleDeadZone(double x, double v, double a, double b, double c)
+    {
+        return v * (x - c) / (1 + ((float)Math.Pow((float)Math.E, a * (-(x - c) + b))));
+    }
+
+    private void DebugTensor(Tensor tensor, int axis, string label)
     {
         string s = label + ": [";
-        for (int i = 0; i < tensor.shape[6]; i++)
+        for (int i = 0; i < tensor.shape[axis]; i++)
         {
             if (i > 0)
             {
                 s += ", ";
             }
-            s += tensor[0, 0, i, 0].ToString("0.###");
+            float x;
+            if (axis == 6)
+            {
+                x = tensor[0, 0, i, 0];
+            }
+            else if (axis == 7)
+            {
+                x = tensor[0, 0, 0, i];
+            }
+            else
+            {
+                throw new Exception("Invalid axis: " + axis);
+            }
+            s += x.ToString("0.#####");
         }
         s += "]";
         Debug.Log(s);
@@ -494,10 +526,7 @@ public class ModelSim : MonoBehaviour
         {
             _tensorLSTMInput[0, 0, i, 0] = _vecGazeL[i];
             _tensorLSTMInput[0, 0, i + 3, 0] = _vecGazeR[i];
-            if (!ModelDropHeadInput)
-            {
-                _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
-            }
+            _tensorLSTMInput[0, 0, i + 6, 0] = _vecForward[i];
         }
 
         var inputs = new Dictionary<string, Tensor>() {
@@ -505,40 +534,27 @@ public class ModelSim : MonoBehaviour
             {"h0", _tensorLSTMHidden},
             {"c0", _tensorLSTMContext}
         };
-        DebugTensorAxis6(_tensorLSTMInput, "LSTM input");
+        DebugTensor(_tensorLSTMInput, 6, "LSTM input");
         //DebugTensorAxis6(_tensorLSTMHidden, "LSTM hidden");
         //DebugTensorAxis6(_tensorLSTMContext, "LSTM context");
 
         _workerLSTM.Execute(inputs);
         Tensor output = _workerLSTM.PeekOutput("output");
-        DebugTensorAxis6(output, "LSTM output");
+        //Debug.Log("LSTM shape: " + output.shape);
+        DebugTensor(output, 7, "LSTM output");
         _tensorLSTMHidden?.Dispose();
         _tensorLSTMHidden = _workerLSTM.PeekOutput("hn");
         _tensorLSTMContext?.Dispose();
         _tensorLSTMContext = _workerLSTM.PeekOutput("cn");
 
-        Quaternion rotation;
-        if (ModelPredictRelativeHead)
+        // Wait a few iterations to let the hidden states settle down to something reasonable.
+        if (_modelLSTMSkipCounter > 0)
         {
-            //var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]);
-            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]);
-            //Debug.Log("delta: " + delta.ToString());
-            //Debug.Log("delta.normalized: " + delta.normalized.ToString());
-            rotation = Quaternion.LookRotation((_vecForward + delta).normalized);
-            //Debug.Log("rotation: " + rotation.ToString());
+            _modelLSTMSkipCounter--;
         }
         else
         {
-            var newForward = new Vector3(output[0, 0, 0, 0] - 0.05f, output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized; // LRXYZ
-            //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
-            //var new_forward = new Vector3(output[0, 0, 0, 0], output[0, 0, 1, 0], output[0, 0, 2, 0]).normalized; // LSTM_...
-            rotation = Quaternion.LookRotation(newForward);
-        }
-
-        if (DisableHeadTracking.Disable)
-        {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 5.0f); // LRXYZ
-            //_player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 16.0f); // LSTM...
+            RotatePlayer(output[0, 0, 0, 0], output[0, 0, 0, 1]);
         }
     }
 
@@ -549,38 +565,59 @@ public class ModelSim : MonoBehaviour
         {
             _tensorMLPInput[0, 0, i, 0] = _vecGazeL[i];
             _tensorMLPInput[0, 0, i + 3, 0] = _vecGazeR[i];
-            if (!ModelDropHeadInput)
-            {
-                _tensorMLPInput[0, 0, i + 6, 0] = _vecForward[i];
-            }
+            _tensorMLPInput[0, 0, i + 6, 0] = _vecForward[i];
         }
         var Inputs = new Dictionary<string, Tensor>() {
             {_modelMLP.inputs[0].name, _tensorMLPInput},
         };
-        //DebugTensorAxis6(_tensorMLPInput, "MLP input");
+        //DebugTensor(_tensorMLPInput, 7, "MLP input");
 
         _workerMLP.Execute(Inputs);
         string outputLayerName = _modelMLP.outputs[0];
         Tensor output = _workerMLP.PeekOutput(outputLayerName);
-        //DebugTensorAxis6(output, "MLP output");
+        DebugTensor(output, 7, "MLP output");
 
-        Quaternion rotation;
-        if (ModelPredictRelativeHead)
-        {
-            var delta = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 1]);
-            rotation = Quaternion.LookRotation((_vecForward + delta).normalized);
-        }
-        else
-        {
-            var newForward = new Vector3(output[0, 0, 0, 0], output[0, 0, 0, 1], output[0, 0, 0, 2]).normalized;
-            rotation = Quaternion.LookRotation(newForward);
-        }
+        RotatePlayer(output[0, 0, 0, 0], output[0, 0, 0, 1]);
+    }
 
-        if (DisableHeadTracking.Disable)
+    private void ModelCallMLP1()
+    {
+        // Build the input vector
+        for (int i = 0; i < 3; i++)
         {
-            _player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 40.0f); // MLP-v2
-            //_player.rotation = Quaternion.Slerp(_player.rotation, rotation, Time.deltaTime * 0.5f); // MLP-...-WithZ...
+            _tensorMLPInput1[0, 0, i, 0] = _vecGazeL[i];
+            _tensorMLPInput1[0, 0, i + 3, 0] = _vecGazeR[i];
+            _tensorMLPInput1[0, 0, i + 6, 0] = _vecForward[i];
         }
+        var Inputs = new Dictionary<string, Tensor>() {
+            {_modelMLP1.inputs[0].name, _tensorMLPInput1},
+        };
+        //DebugTensor(_tensorMLPInput, 7, "MLP input");
+
+        _workerMLP1.Execute(Inputs);
+        string outputLayerName = _modelMLP1.outputs[0];
+        Tensor output = _workerMLP1.PeekOutput(outputLayerName);
+        DebugTensor(output, 7, "MLP1 output");
+
+        RotatePlayer(output[0, 0, 0, 0], output[0, 0, 0, 1]);
+    }
+
+    void RotatePlayer(float incrementPitch, float incrementYaw)
+    {
+        Debug.Log("incrementPitch: " + incrementPitch + "; incrementYaw: " + incrementYaw);
+        double x = _player.forward.x;
+        double y = _player.forward.y;
+        double z = _player.forward.z;
+        Debug.Log("forward: " + x + ", " + y + ", " + z);
+
+        double pitch = Math.Max(-Math.PI / 2, Math.Min(Math.PI / 2, Math.Atan(y / z) + incrementPitch));
+        y = Math.Tan(pitch) * z;
+
+        double yaw = Math.Max(-Math.PI / 2, Math.Min(Math.PI / 2, Math.Atan(x / z) + incrementYaw));
+        x = Math.Tan(yaw) * z;
+
+        Vector3 forward = new Vector3((float)x, (float)y, (float)z);
+        _player.rotation = Quaternion.LookRotation(forward.normalized);
     }
 
     private void ResetModel()
@@ -600,11 +637,17 @@ public class ModelSim : MonoBehaviour
             _tensorLSTMHidden[0, 0, i, 0] = 0;
             _tensorLSTMContext[0, 0, i, 0] = 0;
         }
+        _modelLSTMSkipCounter = MODEL_LSTM_SKIP_UPDATE_ITERATIONS;
 
         _workerMLP?.Dispose();
         _tensorMLPInput?.Dispose();
         _workerMLP = WorkerFactory.CreateWorker(WorkerFactory.Type.ComputePrecompiled, _modelMLP);
         _tensorMLPInput = new Tensor(1, 1, _inputLength, 1);
+
+        _workerMLP1?.Dispose();
+        _tensorMLPInput1?.Dispose();
+        _workerMLP1 = WorkerFactory.CreateWorker(WorkerFactory.Type.ComputePrecompiled, _modelMLP1);
+        _tensorMLPInput1 = new Tensor(1, 1, _inputLength, 1);
     }
 
     private void ResetHead()
@@ -845,7 +888,7 @@ public class ModelSim : MonoBehaviour
 
         // Run for some number of seconds.
         float gameTime = Time.time;
-        while (Time.time - gameTime < SECONDS_TRIAL)
+        while (Time.time - gameTime < SecondsTrial)
         {
             yield return null;
         }

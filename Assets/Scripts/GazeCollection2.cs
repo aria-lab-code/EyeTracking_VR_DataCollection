@@ -26,8 +26,17 @@ public class GazeCollection2 : MonoBehaviour
     private static string UserID;
     private static int trialNum;
     private static string File_Path;
-    private static string Record_name = "ScoreRecord" + ".txt";
+    private static string Record_name = "ScoreRecord" + ".csv";
     #endregion
+
+    public enum TestType
+    {
+        None,
+        LinearSmoothPursuit,
+        ArcSmoothPursuit,
+        RapidVisualSearch,
+        RapidVisualSearchAvoidance
+    }
 
     #region "GUI interactions"
     public TextMesh breakMessage2, countdownMessage2;
@@ -49,21 +58,22 @@ public class GazeCollection2 : MonoBehaviour
     private float gameTime;
     private static TestType Testing;
     private const float totalGameTime = 90;
-    
 
     #region "EyeDataParameters"
+    private static GazeCollection2 instance; // Used because the eye tracker API callback is inherently static.
     public EyeParameter eye_parameter = new EyeParameter();
     public GazeRayParameter gaze = new GazeRayParameter();
-    private static EyeData_v2 eyeData = new EyeData_v2();
+    private EyeData_v2 eyeData = new EyeData_v2();
     private static bool eye_callback_registered = false;
     private const int maxframe_count = 120 * (int)totalGameTime;
-    private static UInt64 eye_valid_L, eye_valid_R;
-    private static Vector3 gaze_origin_L, gaze_origin_R, origin_L, origin_R;
-    private static Vector3 gaze_direct_L, gaze_direct_R, direct_L, direct_R;
-    private static double gaze_sensitive;
-    private static Stopwatch timer = new Stopwatch();
-    private static Vector3 forward;
-    private static Quaternion rotation;
+    private UInt64 eye_valid_L, eye_valid_R;
+    private Vector3 gaze_origin_L, gaze_origin_R, origin_L, origin_R;
+    private Vector3 gaze_direct_L, gaze_direct_R, direct_L, direct_R;
+    private double gaze_sensitive;
+    private Stopwatch timer = new Stopwatch();
+    private Vector3 forward;
+    private Quaternion rotation;
+    private Transform cameraTransform;
 
     #endregion
 
@@ -73,17 +83,14 @@ public class GazeCollection2 : MonoBehaviour
 
     public List<GameObject> hands;
 
-
     /// <summary>
     /// Parameters for time-related information.
     /// </summary>
-    public static int cnt_callback = 0;
+    public int cnt_callback = 0;
 
-    private static Matrix4x4 localToWorldTransform;
-
-    private static long MeasureTime, CurrentTime, EndTime = 0, timeSpan;
-    private static float time_stamp, sync_time_stamp;
-    private static int frame;
+    private long MeasureTime, CurrentTime, EndTime = 0, timeSpan;
+    private float time_stamp, sync_time_stamp;
+    private int frame;
 
     private const float mm_to_m = 1.0f / 1000.0f;
 
@@ -120,6 +127,8 @@ public class GazeCollection2 : MonoBehaviour
         UserIDNum = UserID;
         RemoveFirstLine(File_Path);
 
+        instance = this;
+
         timer.Start();
         SRanipal_Eye_Framework.Instance.EnableEyeDataCallback = true;
         Testing = TestType.None;
@@ -128,12 +137,12 @@ public class GazeCollection2 : MonoBehaviour
         continueClicked = false;
         calibrationClicked = false;
         forward = Camera.main.transform.forward;
-        
-        Invoke("SystemCheck", 0.5f);                // System check.
-       
+        cameraTransform = Camera.main.transform;
+
+        Invoke(nameof(SystemCheck), 0.5f);                // System check.
         
         calibrated = false; // Should be False at Test Time
-        while(!calibrated)
+        if(!calibrated)
             calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();     // Perform calibration for eye tracking.
 
 
@@ -180,9 +189,9 @@ public class GazeCollection2 : MonoBehaviour
         "object2.z" + "," +
         "object3.x" + "," +
         "object3.y" + "," +
-        "object3.z" + "," +
+        "object3.z" +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_RapidVisualSearch_{trialNum}.csv", variable);
     }
 
     void LinearPursuitObjectData_txt()
@@ -192,9 +201,9 @@ public class GazeCollection2 : MonoBehaviour
         "time_stamp(ms)" + "," +
         "object1.x" + "," +
         "object1.y" + "," +
-        "object1.z" + "," +
+        "object1.z" +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_LinearSmoothPursuit_{trialNum}.csv", variable);
     }
 
     void ArcPursuitObjectData_txt()
@@ -204,9 +213,9 @@ public class GazeCollection2 : MonoBehaviour
         "time_stamp(ms)" + "," +
         "object1.x" + "," +
         "object1.y" + "," +
-        "object1.z" + "," +
+        "object1.z" +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_ArcSmoothPursuit_{trialNum}.csv", variable);
     }
 
     void AvoidMovementObjectData_txt()
@@ -231,9 +240,9 @@ public class GazeCollection2 : MonoBehaviour
         "AvoidObject2.z" + "," +
         "AvoidObject3.x" + "," +
         "AvoidObject3.y" + "," +
-        "AvoidObject3.z" + "," +
+        "AvoidObject3.z" +
         Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum.ToString()}.txt", variable);
+        File.AppendAllText($"Object{UserID}_RapidVisualSearchAvoidance_{trialNum}.csv", variable);
     }
 
     void Data_txt()
@@ -242,22 +251,43 @@ public class GazeCollection2 : MonoBehaviour
         "time(100ns)" + "," +
         "time_stamp(ms)" + "," +
         "frame" + "," +
-        "gaze_direct_L.x" + "," +
-        "gaze_direct_L.y" + "," +
-        "gaze_direct_L.z" + "," +
-        "gaze_direct_R.x" + "," +
-        "gaze_direct_R.y" + "," +
-        "gaze_direct_R.z" + "," +
-        "forward.x" + "," +
-        "forward.y" + "," +
-        "forward.z" + "," +
-        "rotation.w," +
-        "rotation.x," +
-        "rotation.y," +
-        "rotation.z" +
+        "eye_in_head_left_x" + "," +
+        "eye_in_head_left_y" + "," +
+        "eye_in_head_left_z" + "," +
+        "eye_in_head_right_x" + "," +
+        "eye_in_head_right_y" + "," +
+        "eye_in_head_right_z" + "," +
+        "head_x" + "," +
+        "head_y" + "," +
+        "head_z" + "," +
+        "head_rotation_x," +
+        "head_rotation_y," +
+        "head_rotation_z," +
+        "head_rotation_w," +
+        "eye_in_head_left_origin_x," +
+        "eye_in_head_left_origin_y," +
+        "eye_in_head_left_origin_z," +
+        "eye_in_head_right_origin_x," +
+        "eye_in_head_right_origin_y," +
+        "eye_in_head_right_origin_z," +
+        "eye_in_world_left_origin_x," +
+        "eye_in_world_left_origin_y," +
+        "eye_in_world_left_origin_z," +
+        "eye_in_world_right_origin_x," +
+        "eye_in_world_right_origin_y," +
+        "eye_in_world_right_origin_z," +
+        "eye_in_world_left_x," +
+        "eye_in_world_left_y," +
+        "eye_in_world_left_z," +
+        "eye_in_world_right_x," +
+        "eye_in_world_right_y," +
+        "eye_in_world_right_z," +
+        "head_origin_x," +
+        "head_origin_y," +
+        "head_origin_z" +
         Environment.NewLine;
 
-        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", variable);
+        File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".csv", variable);
     }
 
     void Record_txt()
@@ -302,14 +332,13 @@ public class GazeCollection2 : MonoBehaviour
         UnityEngine.Debug.Log(SRanipal_Eye_Framework.Instance.EnableEyeDataCallback.ToString());
         if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == true && eye_callback_registered == false)
         {
-
-            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
+            SRanipal_Eye_v2.WrapperRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallbackStatic));
             eye_callback_registered = true;
         }
 
         else if (SRanipal_Eye_Framework.Instance.EnableEyeDataCallback == false && eye_callback_registered == true)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallbackStatic));
             eye_callback_registered = false;
         }
     }
@@ -318,7 +347,7 @@ public class GazeCollection2 : MonoBehaviour
     {
         if (eye_callback_registered)
         {
-            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallback));
+            SRanipal_Eye_v2.WrapperUnRegisterEyeDataCallback(Marshal.GetFunctionPointerForDelegate((SRanipal_Eye_v2.CallbackBasic)EyeCallbackStatic));
             eye_callback_registered = false;
         }
     }
@@ -351,6 +380,54 @@ public class GazeCollection2 : MonoBehaviour
         }
     }
 
+    private static void EyeCallbackStatic(ref EyeData_v2 eye_data)
+    {
+        instance.EyeCallback(ref eye_data);
+    }
+
+    /// <summary>
+    /// Callback function to record the eye movement data.
+    /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
+    /// </summary>
+    /// <param name="eye_data"></param>
+    private void EyeCallback(ref EyeData_v2 eye_data)
+    {
+        if (cnt_callback > maxframe_count)
+        {
+            return;
+        }
+        //EyeParameter eye_parameter = new EyeParameter();
+        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
+
+        // Measure eye movements at the frequency of 120Hz until framecount reaches the max framecount set.
+        Error error = SRanipal_Eye_API.GetEyeData_v2(ref eyeData);
+        //if (error == ViveSR.Error.WORK)
+        {
+            // -----------------------------------------------------------------------------------------
+            //  Measure each parameter of eye data that are specified in the guideline of SRanipal SDK.
+            // -----------------------------------------------------------------------------------------
+            lock (this) // Ensure that a row in the .csv file isn't written while these values are being updated.
+            {
+                eyeData = eye_data;
+
+                MeasureTime = DateTime.Now.Ticks;
+                timeSpan = timer.ElapsedMilliseconds;
+                time_stamp = eyeData.timestamp;
+                eye_valid_L = eyeData.verbose_data.left.eye_data_validata_bit_mask;
+                eye_valid_R = eyeData.verbose_data.right.eye_data_validata_bit_mask;
+                gaze_origin_L = eyeData.verbose_data.left.gaze_origin_mm * mm_to_m; // right handed coordinate system
+                gaze_origin_R = eyeData.verbose_data.right.gaze_origin_mm * mm_to_m;
+                gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
+                gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
+
+                gaze_sensitive = eye_parameter.gaze_ray_parameter.sensitive_factor;
+
+                cnt_callback++;
+            }
+        }
+
+    }
+
     /// <summary>
     /// Changes the flag to indicate that one of the menu continue buttons has been clicked.
     /// </summary>
@@ -368,7 +445,6 @@ public class GazeCollection2 : MonoBehaviour
     {
         public Vector3 origin;
         public Vector3 dir;
-
 
         public RawGazeRays Absolute(Transform t)
         {
@@ -399,9 +475,9 @@ public class GazeCollection2 : MonoBehaviour
     void Update()
     {
         frame++;
-        localToWorldTransform = Camera.main.transform.localToWorldMatrix;
         forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1));
         rotation = Camera.main.transform.rotation;
+        cameraTransform = Camera.main.transform;
         RawGazeRays localGazeRays;
         GetGazeRays(out localGazeRays, GazeIndex.COMBINE);
         RawGazeRays gazeRays = localGazeRays.Absolute(Camera.main.transform);
@@ -409,7 +485,7 @@ public class GazeCollection2 : MonoBehaviour
         Ray gaze = new Ray(gazeRays.origin, gazeRays.dir);
         RaycastHit hit;
 
-        if (Testing == TestType.RapidMovementTest)
+        if (Testing == TestType.RapidVisualSearch)
         {
             if (!BreakCanvas2.enabled)
             {
@@ -423,7 +499,7 @@ public class GazeCollection2 : MonoBehaviour
                 }
             }
         }
-        else if (Testing == TestType.SmoothLinearTest)
+        else if (Testing == TestType.LinearSmoothPursuit)
         {
             total_score++;
             if (!BreakCanvas2.enabled)
@@ -447,7 +523,7 @@ public class GazeCollection2 : MonoBehaviour
                 TrackObjectLine.GetComponent<SmoothPursuitLinear>().GazeFocusChanged(false);
             }
         }
-        else if (Testing == TestType.SmoothArcTest)
+        else if (Testing == TestType.ArcSmoothPursuit)
         {
             total_score++;
             if (!BreakCanvas2.enabled)
@@ -471,7 +547,7 @@ public class GazeCollection2 : MonoBehaviour
                 TrackObjectArc.GetComponent<SmoothPursuitArc>().GazeFocusChanged(false);
             }
         }
-        else if (Testing == TestType.RapidAvoidTest)
+        else if (Testing == TestType.RapidVisualSearchAvoidance)
         {
             if (!BreakCanvas2.enabled)
             {
@@ -545,6 +621,68 @@ public class GazeCollection2 : MonoBehaviour
             }
         }
 
+        if (Testing != TestType.None && eye_callback_registered && cnt_callback > 0)
+        {
+            lock (this) // Ensure that values aren't being updated while they're written to the .csv file.
+            {
+                Vector3 eyeOriginLWorld = cameraTransform.TransformPoint(gaze_origin_L);
+                Vector3 eyeOriginRWorld = cameraTransform.TransformPoint(gaze_origin_R);
+                Vector3 eyeDirectionLWorld = gaze_direct_L;
+                if (eyeDirectionLWorld != Vector3.zero)
+                {
+                    eyeDirectionLWorld = cameraTransform.TransformDirection(eyeDirectionLWorld);
+                }
+                Vector3 eyeDirectionRWorld = gaze_direct_R;
+                if (eyeDirectionRWorld != Vector3.zero)
+                {
+                    eyeDirectionRWorld = cameraTransform.TransformDirection(eyeDirectionRWorld);
+                }
+
+                string value =
+                    MeasureTime.ToString() + "," +
+                    timeSpan.ToString() + "," +
+                    frame.ToString() + "," +
+                    gaze_direct_L.x.ToString() + "," +
+                    gaze_direct_L.y.ToString() + "," +
+                    gaze_direct_L.z.ToString() + "," +
+                    gaze_direct_R.x.ToString() + "," +
+                    gaze_direct_R.y.ToString() + "," +
+                    gaze_direct_R.z.ToString() + "," +
+                    //gaze_sensitive.ToString() + "," +
+                    forward.x.ToString() + "," +
+                    forward.y.ToString() + "," +
+                    forward.z.ToString() + "," +
+                    rotation.x.ToString() + "," +
+                    rotation.y.ToString() + "," +
+                    rotation.z.ToString() + "," +
+                    rotation.w.ToString() + "," +
+                    gaze_origin_L.x.ToString() + "," +
+                    gaze_origin_L.y.ToString() + "," +
+                    gaze_origin_L.z.ToString() + "," +
+                    gaze_origin_R.x.ToString() + "," +
+                    gaze_origin_R.y.ToString() + "," +
+                    gaze_origin_R.z.ToString() + "," +
+                    eyeOriginLWorld.x.ToString() + "," +
+                    eyeOriginLWorld.y.ToString() + "," +
+                    eyeOriginLWorld.z.ToString() + "," +
+                    eyeOriginRWorld.x.ToString() + "," +
+                    eyeOriginRWorld.y.ToString() + "," +
+                    eyeOriginRWorld.z.ToString() + "," +
+                    eyeDirectionLWorld.x.ToString() + "," +
+                    eyeDirectionLWorld.y.ToString() + "," +
+                    eyeDirectionLWorld.z.ToString() + "," +
+                    eyeDirectionRWorld.x.ToString() + "," +
+                    eyeDirectionRWorld.y.ToString() + "," +
+                    eyeDirectionRWorld.z.ToString() + "," +
+                    cameraTransform.position.x.ToString() + "," +
+                    cameraTransform.position.y.ToString() + "," +
+                    cameraTransform.position.z.ToString() +
+                    Environment.NewLine;
+
+                File.AppendAllText("User" + UserID + "_" + Testing.ToString() + "_" + trialNum.ToString() + ".csv", value);
+            }
+        }
+
         if (firstFrame)
         {
             StartCoroutine(Sequence());
@@ -552,7 +690,7 @@ public class GazeCollection2 : MonoBehaviour
         }
     }
     /// <summary>
-    /// The Callback functions is to record the data(gaze/forward data, object data) to the txt file.
+    /// The Callback functions are to record the object data to the csv file.
     /// </summary>
     #region Callback
 
@@ -572,21 +710,21 @@ public class GazeCollection2 : MonoBehaviour
                                  GazeObject3.transform.position.y.ToString(),
                                  GazeObject3.transform.position.z.ToString() };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-obj2Position[0] + "," +
-obj2Position[1] + "," +
-obj2Position[2] + "," + 
-obj3Position[0] + "," +
-obj3Position[1] + "," +
-obj3Position[2] + "," +
-
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_RapidMovement_{trialNum.ToString()}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            obj2Position[0] + "," +
+            obj2Position[1] + "," +
+            obj2Position[2] + "," + 
+            obj3Position[0] + "," +
+            obj3Position[1] + "," +
+            obj3Position[2] +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_RapidVisualSearch_{trialNum.ToString()}.csv", value);
     }
+
     void AvoidMovementObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
@@ -595,7 +733,7 @@ Environment.NewLine;
         string[] obj1Position = {GazeObject1.transform.position.x.ToString(),
                                  GazeObject1.transform.position.y.ToString(),
                                  GazeObject1.transform.position.z.ToString() };
-        string[] obj2Position ={GazeObject2.transform.position.x.ToString(),
+        string[] obj2Position = {GazeObject2.transform.position.x.ToString(),
                                  GazeObject2.transform.position.y.ToString(),
                                  GazeObject2.transform.position.z.ToString() };
         string[] obj3Position = {GazeObject3.transform.position.x.ToString(),
@@ -611,29 +749,30 @@ Environment.NewLine;
                                  AvoidObject3.transform.position.y.ToString(),
                                  AvoidObject3.transform.position.z.ToString() };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-obj2Position[0] + "," +
-obj2Position[1] + "," +
-obj2Position[2] + "," +
-obj3Position[0] + "," +
-obj3Position[1] + "," +
-obj3Position[2] + "," +
-obj4Position[0] + "," +
-obj4Position[1] + "," +
-obj4Position[2] + "," +
-obj5Position[0] + "," +
-obj5Position[1] + "," +
-obj5Position[2] + "," +
-obj6Position[0] + "," +
-obj6Position[1] + "," +
-obj6Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_AvoidMovement_{trialNum}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] + "," +
+            obj2Position[0] + "," +
+            obj2Position[1] + "," +
+            obj2Position[2] + "," +
+            obj3Position[0] + "," +
+            obj3Position[1] + "," +
+            obj3Position[2] + "," +
+            obj4Position[0] + "," +
+            obj4Position[1] + "," +
+            obj4Position[2] + "," +
+            obj5Position[0] + "," +
+            obj5Position[1] + "," +
+            obj5Position[2] + "," +
+            obj6Position[0] + "," +
+            obj6Position[1] + "," +
+            obj6Position[2] +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_RapidVisualSearchAvoidance_{trialNum}.csv", value);
     }
+
     void LinearPursuitObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
@@ -643,93 +782,34 @@ Environment.NewLine;
                                  TrackObjectLine.transform.position.y.ToString(),
                                  TrackObjectLine.transform.position.z.ToString() };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_LinearPursuit_{trialNum}.txt", value);
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_LinearSmoothPursuit_{trialNum}.csv", value);
     }
+
     void ArcPursuitObjectCallback()
     {
         MeasureTime = DateTime.Now.Ticks;
         timeSpan = timer.ElapsedMilliseconds;
         time_stamp = eyeData.timestamp;
-        string[] obj1Position = {TrackObjectLine.transform.position.x.ToString(),
-                                 TrackObjectLine.transform.position.y.ToString(),
-                                 TrackObjectLine.transform.position.z.ToString() };
+        string[] obj1Position = {TrackObjectArc.transform.position.x.ToString(),
+                                 TrackObjectArc.transform.position.y.ToString(),
+                                 TrackObjectArc.transform.position.z.ToString() };
         string value =
-MeasureTime.ToString() + "," +
-timeSpan.ToString() + "," +
-obj1Position[0] + "," +
-obj1Position[1] + "," +
-obj1Position[2] + "," +
-Environment.NewLine;
-        File.AppendAllText($"Object{UserID}_ArcPursuit_{trialNum}.txt", value);
-    }
-    /// <summary>
-    /// Callback function to record the eye movement data.
-    /// Note that SRanipal_Eye_v2 does not work in the function below. It only works under UnityEngine.
-    /// </summary>
-    /// <param name="eye_data"></param>
-    private static void EyeCallback(ref EyeData_v2 eye_data)
-    {
-        if (cnt_callback > maxframe_count)
-        {
-            return;
-        }
-        EyeParameter eye_parameter = new EyeParameter();
-        SRanipal_Eye_API.GetEyeParameter(ref eye_parameter);
-        eyeData = eye_data;
-        
-
-        // Measure eye movements at the frequency of 120Hz until framecount reaches the max framecount set.
-        Error error = SRanipal_Eye_API.GetEyeData_v2(ref eyeData);
-        //if (error == ViveSR.Error.WORK)
-        {
-            // -----------------------------------------------------------------------------------------
-            //  Measure each parameter of eye data that are specified in the guideline of SRanipal SDK.
-            // -----------------------------------------------------------------------------------------
-            MeasureTime = DateTime.Now.Ticks;
-            timeSpan = timer.ElapsedMilliseconds;
-            time_stamp = eyeData.timestamp;
-            eye_valid_L = eyeData.verbose_data.left.eye_data_validata_bit_mask;
-            eye_valid_R = eyeData.verbose_data.right.eye_data_validata_bit_mask;
-            gaze_origin_L = eyeData.verbose_data.left.gaze_origin_mm * mm_to_m; // right handed coordinate system
-            gaze_origin_R = eyeData.verbose_data.right.gaze_origin_mm * mm_to_m;
-            gaze_direct_L = eyeData.verbose_data.left.gaze_direction_normalized;
-            gaze_direct_R = eyeData.verbose_data.right.gaze_direction_normalized;
-
-            gaze_sensitive = eye_parameter.gaze_ray_parameter.sensitive_factor;
-            
-            string value =
-                MeasureTime.ToString() + "," +
-                timeSpan.ToString() + "," +
-                frame.ToString() + "," +
-                gaze_direct_L.x.ToString() + "," +
-                gaze_direct_L.y.ToString() + "," +
-                gaze_direct_L.z.ToString() + "," +
-                gaze_direct_R.x.ToString() + "," +
-                gaze_direct_R.y.ToString() + "," +
-                gaze_direct_R.z.ToString() + "," +
-                //gaze_sensitive.ToString() + "," +
-                forward.x.ToString() + "," +
-                forward.y.ToString() + "," +
-                forward.z.ToString() + "," +
-                rotation.w.ToString() + "," +
-                rotation.x.ToString() + "," +
-                rotation.y.ToString() + "," +
-                rotation.z.ToString() +
-                Environment.NewLine;
-
-            File.AppendAllText("User" + UserID + "_" + Testing.ToString().Replace("Test", "") + "_" + trialNum.ToString() + ".txt", value);
-
-            cnt_callback++;
-        }
-        
+            MeasureTime.ToString() + "," +
+            timeSpan.ToString() + "," +
+            obj1Position[0] + "," +
+            obj1Position[1] + "," +
+            obj1Position[2] +
+            Environment.NewLine;
+        File.AppendAllText($"Object{UserID}_ArcSmoothPursuit_{trialNum}.csv", value);
     }
     #endregion
+
     /// <summary>
     /// Saccade task sequence.
     /// The function controll the test process, including the information message(breakMessage2)
@@ -788,8 +868,7 @@ Environment.NewLine;
         yield return StartCoroutine(DisplayBreakMenu());
         //****End of Introduction****
 
-
-        UnityEngine.Random.seed = randomSeed;
+        //UnityEngine.Random.seed = randomSeed;
         breakMessage2.text = "During the Linear Pursuit section, your goal is to track the cube along its designated path.\n" +
                              "As the player, you will participate in three rounds, with rest intervals between each round.\n" +
                              "Please click <Continue> to procee the test";
@@ -1004,7 +1083,7 @@ Environment.NewLine;
         BreakCanvas2.gameObject.SetActive(true);
         calibrationButton.gameObject.SetActive(false);
         TrackObjectLine.SetActive(true);
-        Testing = TestType.SmoothLinearTest;
+        Testing = TestType.LinearSmoothPursuit;
         gameTime = Time.time;
         while (!continueClicked && Time.time-gameTime<30)
         {
@@ -1028,7 +1107,7 @@ Environment.NewLine;
         GazeObject1.SetActive(true);
         GazeObject2.SetActive(true);
         GazeObject3.SetActive(true);
-        Testing = TestType.RapidMovementTest;
+        Testing = TestType.RapidVisualSearch;
         gameTime = Time.time;
         while (!continueClicked && Time.time - gameTime < 30)
         {
@@ -1056,7 +1135,7 @@ Environment.NewLine;
         AvoidObject1.SetActive(true);
         AvoidObject2.SetActive(true);
         AvoidObject3.SetActive(true);
-        Testing = TestType.RapidAvoidTest;
+        Testing = TestType.RapidVisualSearchAvoidance;
         gameTime = Time.time;
         while (!continueClicked && Time.time - gameTime < 30)
         {
@@ -1121,7 +1200,7 @@ Environment.NewLine;
         {
             continueClicked = false;
             calibrationClicked = false;
-            calibrationButton.gameObject.GetComponentInChildren<TextMeshProUGUI>().text = "Caliboration";
+            calibrationButton.gameObject.GetComponentInChildren<TextMeshProUGUI>().text = "Calibration";
             calibrated = false;
             breakMessage2.text = "When you are ready to proceed with the game, kindly select the <Calibration> button.";
             continueButton.gameObject.SetActive(false);
@@ -1129,7 +1208,7 @@ Environment.NewLine;
             
             while (!calibrationClicked)
                 yield return null;
-            while (!calibrated)
+            if (!calibrated)
                 calibrated = SRanipal_Eye_v2.LaunchEyeCalibration();
             calibrated = true;
             breakMessage2.text = "Please click <Continue> to proceed with the game.";
@@ -1175,7 +1254,7 @@ Environment.NewLine;
         GazeObject3.SetActive(true);
         cnt_callback = 0;
         RapidMovementObjectData_txt();
-        Testing = TestType.RapidMovementTest;
+        Testing = TestType.RapidVisualSearch;
 
         total_score = score = 0;
         Invoke("Measurement", 0f);
@@ -1214,7 +1293,7 @@ Environment.NewLine;
         cnt_callback = 0;
         LinearPursuitObjectData_txt();
         score = total_score = 0;
-        Testing = TestType.SmoothLinearTest;
+        Testing = TestType.LinearSmoothPursuit;
         Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
@@ -1249,7 +1328,7 @@ Environment.NewLine;
         cnt_callback = 0;
         ArcPursuitObjectData_txt();
         score = total_score = 0;
-        Testing = TestType.SmoothArcTest;
+        Testing = TestType.ArcSmoothPursuit;
         Invoke("Measurement", 0f);
         gameTime = Time.time;
         while (Time.time - gameTime < totalGameTime)
@@ -1286,7 +1365,7 @@ Environment.NewLine;
         cnt_callback = 0;
         score = total_score = 0;
         AvoidMovementObjectData_txt();
-        Testing = TestType.RapidAvoidTest;
+        Testing = TestType.RapidVisualSearchAvoidance;
 
         Invoke("Measurement", 0f);
         gameTime = Time.time;
@@ -1305,6 +1384,7 @@ Environment.NewLine;
         EnableHand(true);
         Release();
     }
+
     void EnableHand(bool enable)
     {
         foreach( GameObject h in hands)
@@ -1312,14 +1392,4 @@ Environment.NewLine;
             h.SetActive(enable);
         }
     }
-
-    public enum TestType
-    {
-        None,
-        RapidMovementTest,
-        SmoothLinearTest,
-        SmoothArcTest,
-        RapidAvoidTest
-    }
 }
-

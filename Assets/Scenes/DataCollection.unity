@@ -2066,6 +2066,7 @@ MonoBehaviour:
   calibrationButton: {fileID: 2083122465}
   continueButton: {fileID: 312617100}
   hands: []
+  cnt_callback: 0
   RayCastLayers:
     serializedVersion: 2
     m_Bits: 1
@@ -2942,7 +2943,8 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 114000010547881750, guid: dc06161b6d97feb419f45f03b62e14b9, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: dc06161b6d97feb419f45f03b62e14b9, type: 3}
 --- !u!1 &1979999772
 GameObject:
@@ -3224,7 +3226,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 16b6088a18b6eef4ca2848a13520ecb7, type: 2}
+  - {fileID: 2100000, guid: 4e1938f11c3d6f4449d2217574396f57, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

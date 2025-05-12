@@ -2577,11 +2577,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4937e31b6ccd7b44694b1e647be389ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  ModelDownsamplingRate: 1
-  ModelPredictRelativeHead: 0
-  ModelDropHeadInput: 0
-  ModelAssetLSTM: {fileID: 5022602860645237092, guid: 147b0de5ca0b6e6458f876ac93924b88, type: 3}
-  ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
+  DebugMode: 1
+  ModelAssetLSTM: {fileID: 5022602860645237092, guid: 6fdc19eb00d63c3439fde0cd25e2a47b, type: 3}
+  ModelAssetMLP: {fileID: 5022602860645237092, guid: 9430392595a26a540aa2256dd97e26f1, type: 3}
+  ModelAssetMLP1: {fileID: 5022602860645237092, guid: b5aafad13a900804db29fae5900f4ab1, type: 3}
   TrackObjectLine: {fileID: 1210311865}
   TrackObjectArc: {fileID: 1515476044}
   GazeObject1: {fileID: 1517572048}
@@ -2594,4 +2593,5 @@ MonoBehaviour:
   CountdownCanvas: {fileID: 1226335111}
   BreakMessage: {fileID: 1083708609}
   CountdownMessage: {fileID: 576849366}
+  SecondsTrial: 15
   DoCalibrateAtStart: 1
