@@ -6,6 +6,7 @@ MonoImporter:
   defaultReferences:
   - ModelAssetLSTM: {fileID: 5022602860645237092, guid: a78d46cb092240240beb9f3fc2bb4ba6, type: 3}
   - ModelAssetMLP: {fileID: 5022602860645237092, guid: 3f18a9b04ceacfb458ccb2a5cbcfa05d, type: 3}
+  - ModelAssetMLP1: {instanceID: 0}
   - TrackObjectLine: {instanceID: 0}
   - TrackObjectArc: {instanceID: 0}
   - GazeObject1: {instanceID: 0}

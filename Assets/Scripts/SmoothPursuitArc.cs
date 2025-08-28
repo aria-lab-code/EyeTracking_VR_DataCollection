@@ -5,7 +5,6 @@ using UnityEngine;
 
 public class SmoothPursuitArc : MonoBehaviour
 {
-
     private float x;
     private float y;
     private float max;
@@ -31,14 +30,12 @@ public class SmoothPursuitArc : MonoBehaviour
 
     private bool focused;
 
-
-
     // Start is called before the first frame update
     void OnEnable()
     {
         //ran = new System.Random();
         speed = 1f;
-        transform.position = new Vector3(0, 5, 10);
+        transform.position = new Vector3(0, 1, 10);
         max = 10 * Mathf.Sqrt(3);
         atNextPos = false;
 
@@ -100,7 +97,6 @@ public class SmoothPursuitArc : MonoBehaviour
         angle = Mathf.Atan2(transform.position.y - center.y, transform.position.x - center.x);
     }
     
-    
     // Update is called once per frame
     void Update()
     {
@@ -150,6 +146,7 @@ public class SmoothPursuitArc : MonoBehaviour
         }
         checkFocus(hasFocus);
     }
+
     private void checkFocus(bool newFocus)
     {
         if (newFocus != focused)

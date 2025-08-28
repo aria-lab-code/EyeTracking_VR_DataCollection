@@ -1,5 +1,5 @@
 fileFormatVersion: 2
-guid: 56c4942f205c1c14b87bd658cb4fd65b
+guid: b430789b8c3a7ec408475326c3b38b4e
 ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -9,7 +9,7 @@ ScriptedImporter:
   assetBundleVariant: 
   script: {fileID: 11500000, guid: 683b6cb6d0a474744822c888b46772c9, type: 3}
   optimizeModel: 1
-  forceArbitraryBatchSize: 1
+  forceArbitraryBatchSize: 0
   treatErrorsAsWarnings: 0
   importMode: 1
   weightsTypeMode: 0

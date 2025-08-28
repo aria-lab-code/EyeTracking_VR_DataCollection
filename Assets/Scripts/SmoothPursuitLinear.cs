@@ -29,7 +29,7 @@ public class SmoothPursuitLinear : MonoBehaviour
         speed = 5;
         max = 15;//10 * Mathf.Sqrt(3);
 
-        transform.position = new Vector3(0, 5, 10);
+        transform.position = new Vector3(0, 1, 10);
         
         x = UnityEngine.Random.Range(-max, max);
         y = UnityEngine.Random.Range(-max, max);

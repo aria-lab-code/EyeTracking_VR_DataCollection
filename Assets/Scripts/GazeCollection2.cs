@@ -475,7 +475,7 @@ public class GazeCollection2 : MonoBehaviour
     void Update()
     {
         frame++;
-        forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1));
+        forward = Vector3.Scale(Camera.main.transform.forward, new Vector3(-1, 1, 1)); // TODO: Why??
         rotation = Camera.main.transform.rotation;
         cameraTransform = Camera.main.transform;
         RawGazeRays localGazeRays;
